@@ -1,3 +1,5 @@
+//import System from "systemjs";
+
 // internal types ////////
 
 interface TagName extends String { }
@@ -12,7 +14,8 @@ interface ComponentDefinition {
 
 interface ComponentInstance {
     definition: ComponentDefinition;
-    element: HTMLElement;
+    element: Element;
+    children: Promise<ComponentInstance[]>;
 }
 
 // static data ///////////
@@ -27,12 +30,17 @@ let definitions = new Map<TagName, ComponentDefinition>();
 
 // Promisify so we can async/await //////
 
-let getFile = (tag: TagName, ext: FileExtension) => new Promise<FileContents>(resolve => {
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", "http://localhost/uif/components/" + tag + "." + ext);
-    xhr.onload = () => resolve((xhr.status >= 200 && xhr.status < 300) ? xhr.response : "");
-    xhr.send();
-});
+function getFile(tag: TagName, ext: FileExtension) {
+    let resource = "/uif/components/" + tag + "." + ext;
+    // if (ext === "js")
+    //     return System.import("." + resource)
+        return new Promise<FileContents>(resolve => {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", "http://localhost" + resource);
+            xhr.onload = () => resolve((xhr.status >= 200 && xhr.status < 300) ? xhr.response : "");
+            xhr.send();
+        });
+}
 
 let browserToParseHTML = () => new Promise(r => setTimeout(r));
 
@@ -40,8 +48,11 @@ let browserToParseHTML = () => new Promise(r => setTimeout(r));
 
 let scanLoadAndInstantiate = (customElement: Element): Promise<ComponentInstance[]> => Promise.all(Array
     .from(customElement.children)
-    .filter(e => !defaultTags.includes(e.tagName))
     .map(async element => {
+        if (defaultTags.includes(element.tagName)) { 
+            scanLoadAndInstantiate(element);
+            return null;
+        }
         let tag: string = element.tagName.toLowerCase();
         let definition: ComponentDefinition = definitions.get(tag);
 
@@ -64,23 +75,24 @@ let scanLoadAndInstantiate = (customElement: Element): Promise<ComponentInstance
         }
 
         if (definition.html) {
-            let content = element.innerHTML;
+            let oldContent = element.innerHTML;
             element.innerHTML = definition.html as string;
-            await browserToParseHTML();
 
-            if (content) {
-                let placeContentHeres = Array.from(element.getElementsByTagName(surroundTag));
-                if (placeContentHeres)
-                    placeContentHeres.forEach(e => e.outerHTML = content);
+            if (oldContent) {
                 await browserToParseHTML();
+                let placeContentHeres = Array.from(element.getElementsByTagName(surroundTag));
+                if (placeContentHeres) 
+                    placeContentHeres.forEach(e => e.outerHTML = oldContent);
             }
-            //return
-            scanLoadAndInstantiate(element);
+
+            await browserToParseHTML();
+            var childrenComponents = scanLoadAndInstantiate(element);
         }
 
         return <ComponentInstance>{
             definition: definition,
             element: element,
+            children: childrenComponents || [],
         };
     }));
 
