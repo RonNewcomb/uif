@@ -10,12 +10,9 @@ interface ComponentDefinition {
     js: FileContents;
 }
 
-interface ComponentToCreate {
-    definition: ComponentDefinition;
-    location: HTMLElement;
-}
-
 interface ComponentInstance {
+    definition: ComponentDefinition;
+    element: HTMLElement;
 }
 
 // static data ///////////
@@ -41,53 +38,52 @@ let browserToParseHTML = () => new Promise(r => setTimeout(r));
 
 // scan, load, instantiate ///////
 
-function getTagsWithin(elements: HTMLCollection): Element[] {
-    return Array.from(elements).filter(e => !defaultTags.includes(e.tagName));
-}
+let scanLoadAndInstantiate = (customElement: Element): Promise<ComponentInstance[]> => Promise.all(Array
+    .from(customElement.children)
+    .filter(e => !defaultTags.includes(e.tagName))
+    .map(async element => {
+        let tag: string = element.tagName.toLowerCase();
+        let definition: ComponentDefinition = definitions.get(tag);
 
-async function loadComponent(tag: TagName): Promise<ComponentDefinition> {
-    if (definitions.has(tag))
-        return definitions.get(tag);
-    definitions.set(tag, {} as ComponentDefinition);
-    return Promise.all(standardExtentions.map(async ext => definitions.get(tag)[ext] = await getFile(tag, ext)))
-        .then(_ => definitions.get(tag));
-}
-
-async function instantiateComponent(component: ComponentToCreate): Promise<ComponentInstance> {
-
-    if (component.definition.css) {
-        let style = document.createElement('style');
-        style.innerHTML = component.definition.css as string;
-        document.head.appendChild(style);
-    }
-
-    if (component.definition.js) {
-        let script = document.createElement('script');
-        script.innerHTML = component.definition.js as string;
-        document.body.appendChild(script);
-    }
-
-    if (component.definition.html) {
-        let content = component.location.innerHTML;
-        component.location.innerHTML = component.definition.html as string;
-        await browserToParseHTML();
-
-        if (content) {
-            (Array.from(component.location.getElementsByTagName(surroundTag)) || []).forEach(e => e.outerHTML = content);
-            await browserToParseHTML();
+        if (!definition) {
+            definitions.set(tag, {} as ComponentDefinition);
+            definition = definitions.get(tag);
+            await Promise.all(standardExtentions.map(async ext => definition[ext] = await getFile(tag, ext)));
         }
-        return scanLoadAndInstantiate(component.location);
-    }
-    return component as ComponentInstance;
-}
 
-async function scanLoadAndInstantiate(customElement: Element): Promise<ComponentInstance[]> {
-    return Promise.all(
-        getTagsWithin(customElement.children)
-            .map(async element => <ComponentToCreate>{ definition: await loadComponent(element.tagName.toLowerCase()), location: await element })
-            .map(async component2Create => instantiateComponent(await component2Create))
-    );
-}
+        if (definition.css) {
+            let style = document.createElement('style');
+            style.innerHTML = definition.css as string;
+            document.head.appendChild(style);
+        }
+
+        if (definition.js) {
+            let script = document.createElement('script');
+            script.innerHTML = definition.js as string;
+            document.body.appendChild(script);
+        }
+
+        if (definition.html) {
+            let content = element.innerHTML;
+            element.innerHTML = definition.html as string;
+            await browserToParseHTML();
+
+            if (content) {
+                let placeContentHeres = Array.from(element.getElementsByTagName(surroundTag));
+                if (placeContentHeres)
+                    placeContentHeres.forEach(e => e.outerHTML = content);
+                await browserToParseHTML();
+            }
+            //return
+            scanLoadAndInstantiate(element);
+        }
+
+        return <ComponentInstance>{
+            definition: definition,
+            element: element,
+        };
+    }));
+
 
 // go ///////////
 
