@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "name": "uif",
+  "description": "A toy UI framework",
+  "private": true,
+  "devDependencies": {
+    "typescript": "^2.7.2"
+  },
+  "dependencies": {
+  }
+}
