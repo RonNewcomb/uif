@@ -21,18 +21,19 @@ interface ComponentInstance {
 // static data ///////////
 
 const surroundTag = 'INNERHTML';
-const standardCustomTags = ['IF', 'EACH'];
-const standardTags = ['DIV', 'P', 'SPAN', 'SCRIPT', 'B', 'I', 'A', 'UL', 'LI', surroundTag].concat(standardCustomTags);
+const standardCustomTags = ['IF', 'EACH', surroundTag];
+const standardTags = ["A", "ABBR", "ACRONYM", "ADDRESS", "APPLET", "AREA", "ARTICLE", "ASIDE", "AUDIO", "B", "BASE", "BASEFONT", "BDO", "BIG", "BLOCKQUOTE", "BODY", "BR", "BUTTON", "CANVAS", "CAPTION", "CENTER", "CITE", "CODE", "COL", "COLGROUP", "DATA", "DATALIST", "DD", "DEL", "DFN", "DIR", "DIV", "DL", "DT", "EM", "EMBED", "FIELDSET", "FIGCAPTION", "FIGURE", "FONT", "FOOTER", "FORM", "FRAME", "FRAMESET", "H1", "H2", "H3", "H4", "H5", "H6", "HEAD", "HEADER", "HGROUP", "HR", "HTML", "I", "IFRAME", "IMG", "INPUT", "INS", "ISINDEX", "KBD", "KEYGEN", "LABEL", "LEGEND", "LI", "LINK", "LISTING", "MAP", "MARK", "MARQUEE", "MENU", "META", "METER", "NAV", "NEXTID", "NOBR", "NOFRAMES", "NOSCRIPT", "OBJECT", "OL", "OPTGROUP", "OPTION", "OUTPUT", "P", "PARAM", "PICTURE", "PLAINTEXT", "PRE", "PROGRESS", "Q", "RT", "RUBY", "S", "SAMP", "SCRIPT", "SECTION", "SELECT", "SMALL", "SOURCE", "SPAN", "STRIKE", "STRONG", "STYLE", "SUB", "SUP", "TABLE", "TBODY", "TD", "TEMPLATE", "TEXTAREA", "TFOOT", "TH", "THEAD", "TIME", "TITLE", "TR", "TRACK", "TT", "U", "UL", "VAR", "VIDEO", "WBR", "X-MS-WEBVIEW", "XMP"];
+const defaultTags = standardTags.concat(standardCustomTags);
 const standardExtentions = ["html", "css", "js"];
 
 let definitions = new Map<TagName, ComponentDefinition>();
 
-// Promisify //////
+// Promisify so we can async/await //////
 
 let getFile = (tag: TagName, ext: FileExtension) => new Promise<FileContents>(resolve => {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", "http://localhost/uif/components/" + tag + "." + ext);
-    xhr.onload = () => resolve((xhr.status >= 200 && xhr.status < 300) ? xhr.response : void 0);
+    xhr.onload = () => resolve((xhr.status >= 200 && xhr.status < 300) ? xhr.response : "");
     xhr.send();
 });
 
@@ -41,11 +42,7 @@ let browserToParseHTML = () => new Promise(r => setTimeout(r));
 // scan, load, instantiate ///////
 
 function getTagsWithin(elements: HTMLCollection): Element[] {
-    let customElements = [] as Element[];
-    for (let i = 0; i < elements.length; i++) // can't use anything but long-form loop
-        if (standardTags.indexOf(elements[i].tagName) === -1)
-            customElements.push(elements[i]);
-    return customElements;
+    return Array.from(elements).filter(e => !defaultTags.includes(e.tagName));
 }
 
 async function loadComponent(tag: TagName): Promise<ComponentDefinition> {
@@ -73,15 +70,11 @@ async function instantiateComponent(component: ComponentToCreate): Promise<Compo
     if (component.definition.html) {
         let content = component.location.innerHTML;
         component.location.innerHTML = component.definition.html as string;
-
         await browserToParseHTML();
+
         if (content) {
-            let contentElement = component.location.getElementsByTagName(surroundTag);
-            if (contentElement && contentElement.length > 0) {
-                for (let i = 0; i < contentElement.length; i++)
-                    contentElement[i].outerHTML = content;
-                await browserToParseHTML();
-            }
+            (Array.from(component.location.getElementsByTagName(surroundTag)) || []).forEach(e => e.outerHTML = content);
+            await browserToParseHTML();
         }
         return scanLoadAndInstantiate(component.location);
     }

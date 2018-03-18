@@ -2,7 +2,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "target": "es5",
-    "lib": [ "es6", "dom" ],
+    "lib": [ "es2018", "dom" ],
     "module": "umd",
     "moduleResolution": "node",
     "sourceMap": false,
