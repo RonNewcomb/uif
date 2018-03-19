@@ -1,4 +1,3 @@
-//import System from "systemjs";
 
 // internal types ////////
 
@@ -30,16 +29,16 @@ let definitions = new Map<TagName, ComponentDefinition>();
 
 // Promisify so we can async/await //////
 
-function getFile(tag: TagName, ext: FileExtension) {
-    let resource = "/uif/components/" + tag + "." + ext;
-    // if (ext === "js")
-    //     return System.import("." + resource)
-        return new Promise<FileContents>(resolve => {
-            var xhr = new XMLHttpRequest();
-            xhr.open("GET", "http://localhost" + resource);
-            xhr.onload = () => resolve((xhr.status >= 200 && xhr.status < 300) ? xhr.response : "");
-            xhr.send();
-        });
+function getFile(tag: TagName, ext: FileExtension): Promise<FileContents> {
+    let resource = "/components/" + tag + "." + ext;
+    if (ext === "js")
+        return SystemJS.import("." + resource).catch(_ => "");
+    return new Promise<FileContents>(resolve => {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "http://localhost/uif" + resource);
+        xhr.onload = () => resolve((xhr.status >= 200 && xhr.status < 300) ? xhr.response : "");
+        xhr.send();
+    });
 }
 
 let browserToParseHTML = () => new Promise(r => setTimeout(r));
@@ -48,17 +47,17 @@ let browserToParseHTML = () => new Promise(r => setTimeout(r));
 
 let scanLoadAndInstantiate = (parentElement: Element): Promise<ComponentInstance[]> => Promise.all(Array
     .from(parentElement.children)
-    .filter(element => { 
+    .filter(element => {
         let isCustom = !defaultTags.includes(element.tagName);
         if (!isCustom)
-            scanLoadAndInstantiate(element);
+            scanLoadAndInstantiate(element); // check descendents of div, span, etc. but don't send them on to the next step
         return isCustom;
     })
     .map(async element => {
         let tag: string = element.tagName.toLowerCase();
         let definition: ComponentDefinition | undefined = definitions.get(tag);
 
-        if (definition == undefined) {
+        if (!definition) {
             definition = {} as ComponentDefinition;
             definitions.set(tag, definition);
             await Promise.all(standardExtentions.map(async ext => definition![ext] = await getFile(tag, ext)));
@@ -70,11 +69,11 @@ let scanLoadAndInstantiate = (parentElement: Element): Promise<ComponentInstance
             document.head.appendChild(style);
         }
 
-        if (definition.js) {
-            let script = document.createElement('script');
-            script.innerHTML = definition.js as string;
-            document.body.appendChild(script);
-        }
+        // if (definition.js) {
+        //     let script = document.createElement('script');
+        //     script.innerHTML = definition.js as string;
+        //     document.body.appendChild(script);
+        // }
 
         let componentInstance: ComponentInstance = {
             definition: definition,
@@ -103,4 +102,5 @@ let scanLoadAndInstantiate = (parentElement: Element): Promise<ComponentInstance
 
 // go ///////////
 
-window.onload = _ => scanLoadAndInstantiate(document.body);
+//window.onload = () => scanLoadAndInstantiate(document.body);
+scanLoadAndInstantiate(document.body);
