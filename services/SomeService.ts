@@ -1,6 +1,6 @@
 
-export default class { 
-    printer() { 
+export default abstract class { 
+    static printer() { 
         console.log("someservice.printer() called");
     }
 } 

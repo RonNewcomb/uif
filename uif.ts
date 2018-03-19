@@ -4,17 +4,23 @@
 interface TagName extends String { }
 interface FileContents extends String { }
 interface FileExtension extends String { }
+interface ControllerCtor {
+    new(instance?: ComponentInstance): Controller;
+}
+interface Controller extends Object, ControllerCtor {
+}
 
 interface ComponentDefinition {
     css: FileContents;
     html: FileContents;
-    js: FileContents;
+    js: ControllerCtor;
 }
 
 interface ComponentInstance {
     definition: ComponentDefinition;
     element: Element;
-    children: ComponentInstance[];
+    children?: ComponentInstance[];
+    controller?: Controller;
 }
 
 // static data ///////////
@@ -32,7 +38,17 @@ let definitions = new Map<TagName, ComponentDefinition>();
 function getFile(tag: TagName, ext: FileExtension): Promise<FileContents> {
     let resource = "/components/" + tag + "." + ext;
     if (ext === "js")
-        return SystemJS.import("." + resource).catch(_ => "");
+        return SystemJS.import("." + resource)
+            .then(exported => {
+                let validIdentifer = tag.replace(/-|\./g, '');
+                if (exported) {
+                    if (exported.default) return exported.default;
+                    if (exported[validIdentifer]) return exported[validIdentifer];
+                }
+                console.log("WARNING:", tag + ".js should have an exported controller class.  Either the class is missing, isn't exported as the default, or isn't exported as", validIdentifer);
+                return null;
+            })
+            .catch(() => null);
     return new Promise<FileContents>(resolve => {
         var xhr = new XMLHttpRequest();
         xhr.open("GET", "http://localhost/uif" + resource);
@@ -63,23 +79,25 @@ let scanLoadAndInstantiate = (parentElement: Element): Promise<ComponentInstance
             await Promise.all(standardExtentions.map(async ext => definition![ext] = await getFile(tag, ext)));
         }
 
+        let componentInstance: ComponentInstance = {
+            definition: definition,
+            element: element,
+        }
+
         if (definition.css) {
             let style = document.createElement('style');
             style.innerHTML = definition.css as string;
             document.head.appendChild(style);
         }
 
-        // if (definition.js) {
-        //     let script = document.createElement('script');
-        //     script.innerHTML = definition.js as string;
-        //     document.body.appendChild(script);
-        // }
-
-        let componentInstance: ComponentInstance = {
-            definition: definition,
-            element: element,
-            children: [] as ComponentInstance[],
-        };
+        if (definition.js) {
+            try {
+                componentInstance.controller = new definition.js(componentInstance);
+            }
+            catch (e) {
+                console.log("ERROR:", tag, "controller ctor threw", e);
+            }
+        }
 
         if (definition.html) {
             let oldContent = element.innerHTML;
