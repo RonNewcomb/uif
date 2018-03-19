@@ -15,7 +15,7 @@ interface ComponentDefinition {
 interface ComponentInstance {
     definition: ComponentDefinition;
     element: Element;
-    children: Promise<ComponentInstance[]>;
+    children: ComponentInstance[];
 }
 
 // static data ///////////
@@ -24,7 +24,7 @@ const surroundTag = 'INNERHTML';
 const standardCustomTags = ['IF', 'EACH', surroundTag];
 const standardTags = ["A", "ABBR", "ACRONYM", "ADDRESS", "APPLET", "AREA", "ARTICLE", "ASIDE", "AUDIO", "B", "BASE", "BASEFONT", "BDO", "BIG", "BLOCKQUOTE", "BODY", "BR", "BUTTON", "CANVAS", "CAPTION", "CENTER", "CITE", "CODE", "COL", "COLGROUP", "DATA", "DATALIST", "DD", "DEL", "DFN", "DIR", "DIV", "DL", "DT", "EM", "EMBED", "FIELDSET", "FIGCAPTION", "FIGURE", "FONT", "FOOTER", "FORM", "FRAME", "FRAMESET", "H1", "H2", "H3", "H4", "H5", "H6", "HEAD", "HEADER", "HGROUP", "HR", "HTML", "I", "IFRAME", "IMG", "INPUT", "INS", "ISINDEX", "KBD", "KEYGEN", "LABEL", "LEGEND", "LI", "LINK", "LISTING", "MAP", "MARK", "MARQUEE", "MENU", "META", "METER", "NAV", "NEXTID", "NOBR", "NOFRAMES", "NOSCRIPT", "OBJECT", "OL", "OPTGROUP", "OPTION", "OUTPUT", "P", "PARAM", "PICTURE", "PLAINTEXT", "PRE", "PROGRESS", "Q", "RT", "RUBY", "S", "SAMP", "SCRIPT", "SECTION", "SELECT", "SMALL", "SOURCE", "SPAN", "STRIKE", "STRONG", "STYLE", "SUB", "SUP", "TABLE", "TBODY", "TD", "TEMPLATE", "TEXTAREA", "TFOOT", "TH", "THEAD", "TIME", "TITLE", "TR", "TRACK", "TT", "U", "UL", "VAR", "VIDEO", "WBR", "X-MS-WEBVIEW", "XMP"];
 const defaultTags = standardTags.concat(standardCustomTags);
-const standardExtentions = ["html", "css", "js"];
+const standardExtentions: (keyof ComponentDefinition)[] = ["html", "css", "js"];
 
 let definitions = new Map<TagName, ComponentDefinition>();
 
@@ -46,20 +46,22 @@ let browserToParseHTML = () => new Promise(r => setTimeout(r));
 
 // scan, load, instantiate ///////
 
-let scanLoadAndInstantiate = (customElement: Element): Promise<ComponentInstance[]> => Promise.all(Array
-    .from(customElement.children)
-    .map(async element => {
-        if (defaultTags.includes(element.tagName)) { 
+let scanLoadAndInstantiate = (parentElement: Element): Promise<ComponentInstance[]> => Promise.all(Array
+    .from(parentElement.children)
+    .filter(element => { 
+        let isCustom = !defaultTags.includes(element.tagName);
+        if (!isCustom)
             scanLoadAndInstantiate(element);
-            return null;
-        }
+        return isCustom;
+    })
+    .map(async element => {
         let tag: string = element.tagName.toLowerCase();
-        let definition: ComponentDefinition = definitions.get(tag);
+        let definition: ComponentDefinition | undefined = definitions.get(tag);
 
-        if (!definition) {
-            definitions.set(tag, {} as ComponentDefinition);
-            definition = definitions.get(tag);
-            await Promise.all(standardExtentions.map(async ext => definition[ext] = await getFile(tag, ext)));
+        if (definition == undefined) {
+            definition = {} as ComponentDefinition;
+            definitions.set(tag, definition);
+            await Promise.all(standardExtentions.map(async ext => definition![ext] = await getFile(tag, ext)));
         }
 
         if (definition.css) {
@@ -74,6 +76,12 @@ let scanLoadAndInstantiate = (customElement: Element): Promise<ComponentInstance
             document.body.appendChild(script);
         }
 
+        let componentInstance: ComponentInstance = {
+            definition: definition,
+            element: element,
+            children: [] as ComponentInstance[],
+        };
+
         if (definition.html) {
             let oldContent = element.innerHTML;
             element.innerHTML = definition.html as string;
@@ -81,19 +89,15 @@ let scanLoadAndInstantiate = (customElement: Element): Promise<ComponentInstance
             if (oldContent) {
                 await browserToParseHTML();
                 let placeContentHeres = Array.from(element.getElementsByTagName(surroundTag));
-                if (placeContentHeres) 
+                if (placeContentHeres)
                     placeContentHeres.forEach(e => e.outerHTML = oldContent);
             }
 
             await browserToParseHTML();
-            var childrenComponents = scanLoadAndInstantiate(element);
+            scanLoadAndInstantiate(element).then(instances => componentInstance.children = instances);
         }
 
-        return <ComponentInstance>{
-            definition: definition,
-            element: element,
-            children: childrenComponents || [],
-        };
+        return componentInstance;
     }));
 
 
