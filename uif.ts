@@ -23,6 +23,10 @@ interface ComponentInstance {
     controller?: Controller;
 }
 
+export interface EventHandler {
+    (/*...rest:any[],*/ event: Event, element: Element): void;
+}
+
 // static data ///////////
 
 const surroundTag = 'INNERHTML';
@@ -31,7 +35,7 @@ const standardTags = ["A", "ABBR", "ACRONYM", "ADDRESS", "APPLET", "AREA", "ARTI
 const defaultTags = standardTags.concat(standardCustomTags);
 const standardExtentions: (keyof ComponentDefinition)[] = ["html", "css", "js"];
 
-let definitions = new Map<TagName, ComponentDefinition>();
+export let definitions = new Map<TagName, ComponentDefinition>();
 
 // Promisify so we can async/await //////
 
@@ -40,12 +44,10 @@ function getFile(tag: TagName, ext: FileExtension): Promise<FileContents> {
     if (ext === "js")
         return SystemJS.import("." + resource)
             .then(exported => {
+                if (exported && exported.default) return exported.default;
                 let validIdentifer = tag.replace(/-|\./g, '');
-                if (exported) {
-                    if (exported.default) return exported.default;
-                    if (exported[validIdentifer]) return exported[validIdentifer];
-                }
-                console.log("WARNING:", tag + ".js should have an exported controller class.  Either the class is missing, isn't exported as the default, or isn't exported as", validIdentifer);
+                if (exported && exported[validIdentifer]) return exported[validIdentifer];
+                console.log("ERROR:", tag + ".js should have an exported controller class.  Either the class is missing, isn't exported as the default, or isn't exported as", validIdentifer);
                 return null;
             })
             .catch(() => null);
@@ -93,6 +95,7 @@ let scanLoadAndInstantiate = (parentElement: Element): Promise<ComponentInstance
         if (definition.js) {
             try {
                 componentInstance.controller = new definition.js(componentInstance);
+                (<any>element).controller = componentInstance.controller;
             }
             catch (e) {
                 console.log("ERROR:", tag, "controller ctor threw", e);
@@ -121,4 +124,12 @@ let scanLoadAndInstantiate = (parentElement: Element): Promise<ComponentInstance
 // go ///////////
 
 //window.onload = () => scanLoadAndInstantiate(document.body);
+
+// Object.keys(window).forEach(key => {
+//     if (/^on/.test(key)) {
+//         window.addEventListener(key.slice(2), event => {
+//             console.log(event);
+//         });
+//     }
+// });
 scanLoadAndInstantiate(document.body);

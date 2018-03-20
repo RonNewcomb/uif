@@ -1,5 +1,5 @@
 <ul class="back">
-    <li onclick="console.log('opening 1st')">menu item 1</li>
-    <li onclick="console.log('opening 2')">menu item 2</li>
-    <li onclick="console.log('opening3')">menu item 3</li>
+    <li onclick="this.parentNode.parentNode.controller.open(1,event,this)">menu item 1</li>
+    <li onclick="this.parentNode.parentNode.controller.open(2,event,this)">menu item 2</li>
+    <li onclick="open">menu item 3</li>
 </ul>
