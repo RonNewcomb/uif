@@ -116,9 +116,9 @@ async function loadAndInstantiateComponent(tag: TagName, element: ElementWithCon
 
         if (oldContent) {
             await browserToParseHTML();
-            const placeContentHeres = Array.from(element.getElementsByTagName(surroundTag));
-            if (placeContentHeres)
-                placeContentHeres.forEach(e => e.outerHTML = oldContent);
+            const placeContentHeres = element.getElementsByTagName(surroundTag);
+            for (var i = placeContentHeres.length - 1; i >= 0; i--)
+                placeContentHeres[i].outerHTML = oldContent;
         }
 
         await browserToParseHTML();

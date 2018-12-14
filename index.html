@@ -3,10 +3,9 @@
 <head>
     <base href="/uif/" />
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <script src="./node_modules/systemjs/dist/system.js"></script>
     <script src="node_modules/systemjs/dist/system.js"></script>
     <script>
-        window.SystemJS.config({
+        SystemJS.config({
             map: {
                 'app': '.',
             },
@@ -17,8 +16,8 @@
                 },
             }
         });
+        SystemJS.import('app').catch(console.error);
     </script>
-    <script>SystemJS.import('app').catch(console.error);</script>
     <!-- <script src="uif.js"></script> -->
 </head>
 
