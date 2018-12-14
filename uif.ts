@@ -10,15 +10,17 @@ interface ControllerCtor {
 interface Controller extends Object, ControllerCtor {
 }
 
+type ElementWithController = Element & { controller?: Controller };
+
 interface ComponentDefinition {
-    css: FileContents;
-    html: FileContents;
-    js: ControllerCtor;
+    css: FileContents | undefined;
+    html: FileContents | undefined;
+    js: ControllerCtor | undefined;
 }
 
 interface ComponentInstance {
     definition: ComponentDefinition;
-    element: Element;
+    element: ElementWithController;
     children?: ComponentInstance[];
     controller?: Controller;
 }
@@ -30,8 +32,8 @@ export interface EventHandler {
 // static data ///////////
 
 const surroundTag = 'INNERHTML';
-const standardCustomTags = ['IF', 'EACH', surroundTag];
-const standardTags = ["A", "ABBR", "ACRONYM", "ADDRESS", "APPLET", "AREA", "ARTICLE", "ASIDE", "AUDIO", "B", "BASE", "BASEFONT", "BDO", "BIG", "BLOCKQUOTE", "BODY", "BR", "BUTTON", "CANVAS", "CAPTION", "CENTER", "CITE", "CODE", "COL", "COLGROUP", "DATA", "DATALIST", "DD", "DEL", "DFN", "DIR", "DIV", "DL", "DT", "EM", "EMBED", "FIELDSET", "FIGCAPTION", "FIGURE", "FONT", "FOOTER", "FORM", "FRAME", "FRAMESET", "H1", "H2", "H3", "H4", "H5", "H6", "HEAD", "HEADER", "HGROUP", "HR", "HTML", "I", "IFRAME", "IMG", "INPUT", "INS", "ISINDEX", "KBD", "KEYGEN", "LABEL", "LEGEND", "LI", "LINK", "LISTING", "MAP", "MARK", "MARQUEE", "MENU", "META", "METER", "NAV", "NEXTID", "NOBR", "NOFRAMES", "NOSCRIPT", "OBJECT", "OL", "OPTGROUP", "OPTION", "OUTPUT", "P", "PARAM", "PICTURE", "PLAINTEXT", "PRE", "PROGRESS", "Q", "RT", "RUBY", "S", "SAMP", "SCRIPT", "SECTION", "SELECT", "SMALL", "SOURCE", "SPAN", "STRIKE", "STRONG", "STYLE", "SUB", "SUP", "TABLE", "TBODY", "TD", "TEMPLATE", "TEXTAREA", "TFOOT", "TH", "THEAD", "TIME", "TITLE", "TR", "TRACK", "TT", "U", "UL", "VAR", "VIDEO", "WBR", "X-MS-WEBVIEW", "XMP"];
+const standardCustomTags = ['if', 'each', surroundTag];
+const standardTags = ["a", "abbr", "acronym", "address", "applet", "area", "article", "aside", "audio", "b", "base", "basefont", "bdo", "big", "blockquote", "body", "br", "button", "canvas", "caption", "center", "cite", "code", "col", "colgroup", "data", "datalist", "dd", "del", "dfn", "dir", "div", "dl", "dt", "em", "embed", "fieldset", "figcaption", "figure", "font", "footer", "form", "frame", "frameset", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html", "i", "iframe", "img", "input", "ins", "isindex", "kbd", "keygen", "label", "legend", "li", "link", "listing", "map", "mark", "marquee", "menu", "meta", "meter", "nav", "nextid", "nobr", "noframes", "noscript", "object", "ol", "optgroup", "option", "output", "p", "param", "picture", "plaintext", "pre", "progress", "q", "rt", "ruby", "s", "samp", "script", "section", "select", "small", "source", "span", "strike", "strong", "style", "sub", "sup", "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "time", "title", "tr", "track", "tt", "u", "ul", "var", "video", "wbr", "x-ms-webview", "xmp"];
 const defaultTags = standardTags.concat(standardCustomTags);
 const standardExtentions: (keyof ComponentDefinition)[] = ["html", "css", "js"];
 
@@ -39,21 +41,20 @@ export let definitions = new Map<TagName, ComponentDefinition>();
 
 // Promisify so we can async/await //////
 
-function getFile(tag: TagName, ext: FileExtension): Promise<FileContents> {
-    let resource = "/components/" + tag + "." + ext;
-    if (ext === "js")
-        return SystemJS.import("." + resource)
-            .then(exported => {
-                if (exported && exported.default) return exported.default;
-                let validIdentifer = tag.replace(/-|\./g, '');
-                if (exported && exported[validIdentifer]) return exported[validIdentifer];
-                console.log("ERROR:", tag + ".js should have an exported controller class.  Either the class is missing, isn't exported as the default, or isn't exported as", validIdentifer);
-                return null;
-            })
-            .catch(() => null);
+async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents | undefined> {
+    let resource = "components/" + tag + "." + ext;
+    if (ext === "js") {
+        let exported = await SystemJS.import("./" + resource).catch(_ => undefined);
+        if (!exported) return undefined;
+        if (exported.default) return exported.default;
+        let validIdentifer = tag.replace(/-|\./g, '');
+        if (exported[validIdentifer]) return exported[validIdentifer];
+        console.error(tag + ".js should have an exported controller class.  Either the class is missing, isn't exported as the default, or isn't exported as", validIdentifer);
+        return undefined;
+    }
     return new Promise<FileContents>(resolve => {
         var xhr = new XMLHttpRequest();
-        xhr.open("GET", "http://localhost/uif" + resource);
+        xhr.open("GET", window.location.href + resource);
         xhr.onload = () => resolve((xhr.status >= 200 && xhr.status < 300) ? xhr.response : "");
         xhr.send();
     });
@@ -63,63 +64,71 @@ let browserToParseHTML = () => new Promise(r => setTimeout(r));
 
 // scan, load, instantiate ///////
 
-let scanLoadAndInstantiate = (parentElement: Element): Promise<ComponentInstance[]> => Promise.all(Array
-    .from(parentElement.children)
-    .filter(element => {
-        let isCustom = !defaultTags.includes(element.tagName);
-        if (!isCustom)
+async function scanLoadAndInstantiate(parentElement: Element): Promise<ComponentInstance[]> {
+    let instantiating: Promise<ComponentInstance>[] = [];
+    for (var i = 0; i < parentElement.children.length; i++) {
+        let element: ElementWithController = parentElement.children[i];
+        let tag: TagName = element.tagName.toLowerCase();
+
+        if (defaultTags.includes(tag as string)) {
             scanLoadAndInstantiate(element); // check descendents of div, span, etc. but don't send them on to the next step
-        return isCustom;
-    })
-    .map(async element => {
-        let tag: string = element.tagName.toLowerCase();
-        let definition: ComponentDefinition | undefined = definitions.get(tag);
-
-        if (!definition) {
-            definition = {} as ComponentDefinition;
-            definitions.set(tag, definition);
-            await Promise.all(standardExtentions.map(async ext => definition![ext] = await getFile(tag, ext)));
+            continue;
         }
 
-        let componentInstance: ComponentInstance = {
-            definition: definition,
-            element: element,
+        let componentInstance = loadAndInstantiate(tag, element);
+        instantiating.push(componentInstance);
+    }
+    return Promise.all(instantiating);
+}
+
+async function loadAndInstantiate(tag: TagName, element: ElementWithController): Promise<ComponentInstance> {
+    let definition: ComponentDefinition | undefined = definitions.get(tag);
+
+    if (!definition) {
+        definition = {} as ComponentDefinition;
+        definitions.set(tag, definition);
+        let loadingFiles = standardExtentions.map(ext => getFile(tag, ext).then(fc => (<any>definition)[ext as string] = fc));
+        await Promise.all(loadingFiles);
+    }
+
+    let componentInstance: ComponentInstance = {
+        definition: definition,
+        element: element,
+    };
+
+    if (definition.css) {
+        let style = document.createElement('style');
+        style.innerHTML = definition.css as string;
+        document.head!.appendChild(style);
+    }
+
+    if (definition.js) {
+        try {
+            element.controller = componentInstance.controller = new definition.js(componentInstance);
         }
-
-        if (definition.css) {
-            let style = document.createElement('style');
-            style.innerHTML = definition.css as string;
-            document.head.appendChild(style);
+        catch (e) {
+            console.error(tag, "controller ctor threw", e);
         }
+    }
 
-        if (definition.js) {
-            try {
-                componentInstance.controller = new definition.js(componentInstance);
-                (<any>element).controller = componentInstance.controller;
-            }
-            catch (e) {
-                console.log("ERROR:", tag, "controller ctor threw", e);
-            }
-        }
+    if (definition.html) {
+        let oldContent = element.innerHTML;
+        element.innerHTML = definition.html as string;
 
-        if (definition.html) {
-            let oldContent = element.innerHTML;
-            element.innerHTML = definition.html as string;
-
-            if (oldContent) {
-                await browserToParseHTML();
-                let placeContentHeres = Array.from(element.getElementsByTagName(surroundTag));
-                if (placeContentHeres)
-                    placeContentHeres.forEach(e => e.outerHTML = oldContent);
-            }
-
+        if (oldContent) {
             await browserToParseHTML();
-            scanLoadAndInstantiate(element).then(instances => componentInstance.children = instances);
+            let placeContentHeres = Array.from(element.getElementsByTagName(surroundTag));
+            if (placeContentHeres)
+                placeContentHeres.forEach(e => e.outerHTML = oldContent);
         }
 
-        return componentInstance;
-    }));
+        await browserToParseHTML();
+        let instances = await scanLoadAndInstantiate(element);
+        componentInstance.children = instances;
+    }
 
+    return componentInstance;
+}
 
 // go ///////////
 
