@@ -44,6 +44,7 @@ async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents |
     const resource = "./components/" + tag + "." + ext;
     if (ext === "js") {
         const exported = await SystemJS.import(resource).catch(_ => undefined);
+        console.log("exported", exported);
         if (!exported) return undefined;
         if (exported.default) return exported.default;
         const validIdentifer = tag.replace(/-|\./g, '');
@@ -64,7 +65,7 @@ const browserToParseHTML = () => new Promise(r => setTimeout(r));
 // scans the direct children of the passed-in HtmlElement for custom components. If any, recurses into them, and set the .children to what the recursion returns.
 async function scanLoadAndInstantiate(parentElement: Element): Promise<ComponentInstance[]> {
     const instantiating: Promise<ComponentInstance>[] = [];
-    for (var i = parentElement.children.length - 1; i >= 0 ; i--) {
+    for (let i = parentElement.children.length - 1; i >= 0 ; i--) {
         const element: ElementWithController = parentElement.children[i];
         const tag: TagName = element.tagName.toLowerCase();
 
@@ -101,9 +102,12 @@ async function loadAndInstantiateComponent(tag: TagName, element: ElementWithCon
         document.head!.appendChild(style);
     }
 
+    console.log(definition);
+
     if (definition.js) {
         try {
             element.controller = componentInstance.controller = new definition.js(componentInstance);
+            console.log("element", element, "has controller", componentInstance.controller);
         }
         catch (e) {
             console.error(tag, "controller ctor threw", e);
@@ -117,7 +121,7 @@ async function loadAndInstantiateComponent(tag: TagName, element: ElementWithCon
         if (oldContent) {
             await browserToParseHTML();
             const placeContentHeres = element.getElementsByTagName(surroundTag);
-            for (var i = placeContentHeres.length - 1; i >= 0; i--)
+            for (let i = placeContentHeres.length - 1; i >= 0; i--)
                 placeContentHeres[i].outerHTML = oldContent;
         }
 
@@ -130,13 +134,4 @@ async function loadAndInstantiateComponent(tag: TagName, element: ElementWithCon
 
 // go ///////////
 
-//window.onload = () => scanLoadAndInstantiate(document.body);
-
-// Object.keys(window).forEach(key => {
-//     if (/^on/.test(key)) {
-//         window.addEventListener(key.slice(2), event => {
-//             console.log(event);
-//         });
-//     }
-// });
 scanLoadAndInstantiate(document.body);

@@ -1,10 +1,24 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
-    "target": "es6",
-    "lib": [ "es2016", "dom" ],
-    "module": "umd",
+    "lib": [ "dom", "es2017" ],  // "lib" decides what passes the compiler, and what the runtime should support (natively or polyfill)
+    // lib:dom = basics. HTMLElement, etc.
+    // lib:es2015 = Promises, lots of stuff
+    // lib:es2016 = [].includes(...)
+    // lib:es2017 =
+    // lib:es2018 =
+    "target": "es2017", // "target" decides what appears in the .js output. If target is lower than lib, it will compile to fallbacks(?).
+    // target:es5 = all dumbest browsers
+    // target:es6 / es2015 = import/export, Promises appear in .js output
+    // target:es7 / es2016 =
+    // target:es8 / es2017 = async/await appear in .js output
+    // target:es9 / es2018 = Promise.finally
+    "module": "es2015", // "module" decides what the import/export keywords, if any, become
+    // module:none = import/export disallowed in source everywhere. Just the raw .js outputted from "target"
+    // module:commonjs/umd/amd/system = extra js code wraps your js code, per the no-language-support libraries
+    // module:es6/es2015/esnext = the import/export keywords from source are preserved
     "moduleResolution": "node",
+    "baseUrl": ".",
+    "strict": true,
     "sourceMap": false,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
