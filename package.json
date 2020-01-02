@@ -4,9 +4,11 @@
   "description": "A toy UI framework",
   "private": true,
   "scripts": {
-    "start": "tsc && index.html"
+    "compile": "tsc",
+    "serve": "ws --https"
   },
   "devDependencies": {
+    "local-web-server": "3.0.7",
     "typescript": "3.2.2",
     "@types/systemjs": "0.20.6"
   },

@@ -10,4 +10,4 @@ a toy UI framework
 * The toy operates naïvely: instead of loading the app, it only loads components as it hits them in the HTML. Preloading [at least some of] them via a manifest listing the files would be more performant.
 
 
-After git cloning and `npm install`, just `npm run start`.  Bring up the F12 console in the browser to look around. 
+After git cloning and `npm install`, just `npm run compile` and `npm run serve`.  Bring up the F12 console in the browser to look around. 
