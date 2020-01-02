@@ -1,11 +1,6 @@
 # uif
 a toy UI framework
 
-I have sort of a love/hate relationship with Angular, because it requires a lot of boilerplate.  But I like React even less, because it does the old AngularJS practice of every model used in a template must be prefaced with an object. (The name of the controller in AngularJS's case, "prop" or "state" in React's case.)  Most other frameworks I've seen, like Vue and Svelte, have the same issues.  
-
-Semi-relatedly, I dislike the [flux](https://facebook.github.io/flux/docs/in-depth-overview.html#content) pattern that Redux et al uses also because of boilerplate. There's only 2½ languages that elegantly support function-invocation-is-a-hook-for-triggers, and that's Smalltalk, Objective-C, and AspectJ.  My employer used Flux in an Actionscript 3 (Flash) project.  Decoupling effects from events so that handlers don't need to know about each other sounds nice, but in practice they created race conditions affected by merely renaming a source file: the compiler hit the files in a different order, so the handlers ended up in a differnt order, and nothing is truly decoupled while it exists in the same app. Once the app gets big enough this source of bugs becomes a constant headache. Additionally, the IDE tooling couldn't follow the chain with "find all references" or similar. You had to do it manually everytime. The fact that Actionscript lacks generics like `Event<T>` means that by the time you found your way to the end of the chain, you'd have also forgotten what type the payload is.
-
-This UI-framework chooses a convention-over-configuration approach with components / custom tags / custom elements:
 * The HTML tag name is also the filename of the js, css, and html which implement it. All frameworks allow this through configuration, but here it's required.
 * All 3 files are optional. They're requested anyway and any 404s are ignored because this toy doesn't operate with a manifest.
 * The controller in the js file is the default export. You don't even need to name the class, just write `export default class {` and implement.
