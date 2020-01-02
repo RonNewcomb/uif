@@ -3,6 +3,9 @@
   "name": "uif",
   "description": "A toy UI framework",
   "private": true,
+  "scripts": {
+    "start": "tsc && index.html"
+  },
   "devDependencies": {
     "typescript": "3.2.2",
     "@types/systemjs": "0.20.6"

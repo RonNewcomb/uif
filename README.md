@@ -8,3 +8,6 @@ a toy UI framework
 * You can put content between the opening and closing tags, to be inserted where `<innerHTML/>` appears in the enclosing component's template. TODO: that would probably make more sense as a controller property, like `{{innerHTML}}` or somesuch, rather than the special tag method that Angular uses.
 * `<if>` and `<each>` (also called `for`) are their own elements instead of attribute-components. I find this cleaner and easier to learn, if a bit inconvenient at times. 
 * The toy operates naïvely: instead of loading the app, it only loads components as it hits them in the HTML. Preloading [at least some of] them via a manifest listing the files would be more performant.
+
+
+After git cloning and `npm install`, just `npm run start`.  Bring up the F12 console in the browser to look around. 
