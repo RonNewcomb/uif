@@ -154,11 +154,13 @@ interface ComponentDefinition {
 
 class Substitution {
   propertyName: string;
+  isFunction: boolean;
   regex: RegExp;
 
-  constructor(key: string) {
+  constructor(key: string, ctrl: Controller) {
     this.propertyName = key;
-    this.regex = new RegExp(`{${key}}`, "g");
+    this.isFunction = typeof ctrl[key] === "function";
+    this.regex = this.isFunction ? new RegExp(`{${key}\\([^)]*\\)}`, "g") : new RegExp(`{${key}}`, "g");
   }
 }
 
@@ -172,32 +174,6 @@ interface ComponentInstance {
 export interface EventHandler {
   (event: Event, element: Element): void;
 }
-
-// pretty up the browser
-
-// declare global {
-//   interface Array<T> {
-//     splitFilter(fn: (value: T) => boolean): { yes: T[]; no: T[] };
-//   }
-//   interface HTMLCollectionBase {
-//     map<U>(callbackfn: (value: Element) => U, thisArg?: any): U[];
-//     filter(callbackfn: (value: Element) => boolean, thisArg?: any): Element[];
-//     reduce<U>(callbackfn: (previousValue: U, currentValue: Element) => U, initialValue: U): U;
-//     splitFilter(fn: (value: Element) => boolean): { yes: Element[]; no: Element[] };
-//   }
-// }
-// Array.prototype.splitFilter = function splitFilter<T>(this: Array<T>, fn: (value: T) => boolean): { yes: T[]; no: T[] } {
-//   const retval = { yes: [] as T[], no: [] as T[] };
-//   for (const item of this) {
-//     const whichList = fn(item) ? retval.yes : retval.no;
-//     whichList.push(item);
-//   }
-//   return retval;
-// };
-// HTMLCollection.prototype.map = Array.prototype.map;
-// HTMLCollection.prototype.filter = Array.prototype.filter;
-// HTMLCollection.prototype.reduce = Array.prototype.reduce;
-// HTMLCollection.prototype.splitFilter = Array.prototype.splitFilter;
 
 // static data ///////////
 
@@ -249,8 +225,10 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
 
   if (definition.js) {
     try {
-      element.controller = componentInstance.controller = new definition.js(componentInstance);
-      componentInstance.substitutions = Object.keys(componentInstance.controller).map(key => new Substitution(key));
+      const ctrl = new definition.js(componentInstance);
+      element.controller = ctrl;
+      componentInstance.controller = ctrl;
+      componentInstance.substitutions = getMembers(ctrl).map(key => new Substitution(key, ctrl));
     } catch (e) {
       console.error(element.tagName.toLowerCase(), "controller ctor threw", e);
     }
@@ -268,13 +246,28 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
 }
 
 function substitutions(html: string, component: ComponentInstance): string {
-  for (const sub of component.substitutions) html = html.replace(sub.regex, component.controller![sub.propertyName]);
+  for (const sub of component.substitutions) {
+    if (sub.isFunction) {
+      html = html.replace(sub.regex, "FUNCTION**");
+    } else html = html.replace(sub.regex, component.controller![sub.propertyName]);
+  }
   return html;
 }
 
-async function scan(element: Element) {
+const protobj = Object.getPrototypeOf(new Object());
+function getMembers(obj: object) {
+  const p: string[] = [];
+  for (; obj && obj != protobj; obj = Object.getPrototypeOf(obj)) {
+    const op: string[] = Object.getOwnPropertyNames(obj);
+    for (let i = 0; i < op.length; i++) if (p.indexOf(op[i]) == -1) p.push(op[i]);
+  }
+  return p;
+}
+
+async function scan(element: Element): Promise<any> {
   if (!standardTags[element.tagName]) await loadAndInstantiateComponent(element);
-  Array.from(element.children).forEach(child => scan(child));
+  const childs = Array.from(element.children).map(scan);
+  return Promise.all(childs);
 }
 
 // go ///////////

@@ -15,4 +15,7 @@ export default class {
     close() {
     }
 
+    hello() {
+        console.log("hello world");
+    }
 }
