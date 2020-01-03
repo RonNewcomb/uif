@@ -165,7 +165,6 @@ class Substitution {
 interface ComponentInstance {
   definition: ComponentDefinition;
   element: ElementWithController;
-  children?: ComponentInstance[]; // basically @ViewChildren(), so only custom components which are direct children of this custom component
   controller?: Controller;
   substitutions: Substitution[]; // cache
 }
@@ -176,29 +175,29 @@ export interface EventHandler {
 
 // pretty up the browser
 
-declare global {
-  interface Array<T> {
-    splitFilter(fn: (value: T) => boolean): { yes: T[]; no: T[] };
-  }
-  interface HTMLCollectionBase {
-    map<U>(callbackfn: (value: Element) => U, thisArg?: any): U[];
-    filter(callbackfn: (value: Element) => boolean, thisArg?: any): Element[];
-    reduce<U>(callbackfn: (previousValue: U, currentValue: Element) => U, initialValue: U): U;
-    splitFilter(fn: (value: Element) => boolean): { yes: Element[]; no: Element[] };
-  }
-}
-Array.prototype.splitFilter = function splitFilter<T>(this: Array<T>, fn: (value: T) => boolean): { yes: T[]; no: T[] } {
-  const retval = { yes: [] as T[], no: [] as T[] };
-  for (const item of this) {
-    const whichList = fn(item) ? retval.yes : retval.no;
-    whichList.push(item);
-  }
-  return retval;
-};
-HTMLCollection.prototype.map = Array.prototype.map;
-HTMLCollection.prototype.filter = Array.prototype.filter;
-HTMLCollection.prototype.reduce = Array.prototype.reduce;
-HTMLCollection.prototype.splitFilter = Array.prototype.splitFilter;
+// declare global {
+//   interface Array<T> {
+//     splitFilter(fn: (value: T) => boolean): { yes: T[]; no: T[] };
+//   }
+//   interface HTMLCollectionBase {
+//     map<U>(callbackfn: (value: Element) => U, thisArg?: any): U[];
+//     filter(callbackfn: (value: Element) => boolean, thisArg?: any): Element[];
+//     reduce<U>(callbackfn: (previousValue: U, currentValue: Element) => U, initialValue: U): U;
+//     splitFilter(fn: (value: Element) => boolean): { yes: Element[]; no: Element[] };
+//   }
+// }
+// Array.prototype.splitFilter = function splitFilter<T>(this: Array<T>, fn: (value: T) => boolean): { yes: T[]; no: T[] } {
+//   const retval = { yes: [] as T[], no: [] as T[] };
+//   for (const item of this) {
+//     const whichList = fn(item) ? retval.yes : retval.no;
+//     whichList.push(item);
+//   }
+//   return retval;
+// };
+// HTMLCollection.prototype.map = Array.prototype.map;
+// HTMLCollection.prototype.filter = Array.prototype.filter;
+// HTMLCollection.prototype.reduce = Array.prototype.reduce;
+// HTMLCollection.prototype.splitFilter = Array.prototype.splitFilter;
 
 // static data ///////////
 
@@ -262,9 +261,7 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
     const valueOfInnerHtmlParameter = element.innerHTML;
     if (valueOfInnerHtmlParameter) rendered = rendered.replace(innerHtmlRegex, valueOfInnerHtmlParameter);
     element.innerHTML = substitutions(rendered, componentInstance);
-
     await browserToParseHTML();
-    componentInstance.children = await scan(element);
   }
 
   return componentInstance;
@@ -275,14 +272,9 @@ function substitutions(html: string, component: ComponentInstance): string {
   return html;
 }
 
-// scans the direct children of the passed-in HtmlElement for custom components.
-// children which aren't simply have their grandchildren scanned, recursively.
-// children which are are instantiated, loaded first if needed.
-async function scan(parentElement: Element): Promise<ComponentInstance[]> {
-  const { yes, no } = parentElement.children.splitFilter(element => standardTags[element.tagName]);
-  const loadingAndInstantiatingComponents = no.map(loadAndInstantiateComponent);
-  yes.forEach(scan);
-  return Promise.all(loadingAndInstantiatingComponents);
+async function scan(element: Element) {
+  if (!standardTags[element.tagName]) await loadAndInstantiateComponent(element);
+  Array.from(element.children).forEach(child => scan(child));
 }
 
 // go ///////////

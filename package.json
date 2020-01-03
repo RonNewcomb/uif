@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "compile": "tsc",
-    "serve": "ws --https"
+    "https": "ws --https",
+    "http": "ws"
   },
   "devDependencies": {
     "local-web-server": "3.0.7",
