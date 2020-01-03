@@ -202,7 +202,7 @@ HTMLCollection.prototype.splitFilter = Array.prototype.splitFilter;
 
 // static data ///////////
 
-const surroundTag = "INNERHTML";
+const innerHtmlRegex = new RegExp(`{innerHTML}`, "g");
 const filesCache = new Map<TagName, ComponentDefinition>();
 const browserToParseHTML = () => new Promise(r => setTimeout(r));
 
@@ -258,13 +258,10 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
   }
 
   if (definition.html) {
-    const oldContent = element.innerHTML;
-    element.innerHTML = substitutions(definition.html as string, componentInstance);
-
-    if (oldContent) {
-      await browserToParseHTML();
-      element.getElementsByTagName(surroundTag).map(each => (each.outerHTML = oldContent));
-    }
+    let rendered = definition.html as string;
+    const valueOfInnerHtmlParameter = element.innerHTML;
+    if (valueOfInnerHtmlParameter) rendered = rendered.replace(innerHtmlRegex, valueOfInnerHtmlParameter);
+    element.innerHTML = substitutions(rendered, componentInstance);
 
     await browserToParseHTML();
     componentInstance.children = await scan(element);
