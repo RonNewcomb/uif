@@ -1,37 +1,3 @@
-// internal types ////////
-
-interface TagName extends String {}
-interface FileContents extends String {}
-interface FileExtension extends String {}
-interface ControllerCtor {
-  new (instance?: ComponentInstance): Controller;
-}
-interface Controller extends Object, ControllerCtor {}
-
-type ElementWithController = Element & { controller?: Controller };
-
-interface ComponentDefinition {
-  css: FileContents | undefined;
-  html: FileContents | undefined;
-  js: ControllerCtor | undefined;
-  loading?: Promise<(FileContents | undefined)[]>;
-}
-
-interface ComponentInstance {
-  definition: ComponentDefinition;
-  element: ElementWithController;
-  children?: ComponentInstance[]; // basically @ViewChildren(), so only custom components which are direct children of this custom component
-  controller?: Controller;
-  substitutions: string[]; // cache
-}
-
-export interface EventHandler {
-  (event: Event, element: Element): void;
-}
-
-// static data ///////////
-
-const surroundTag = "INNERHTML";
 const standardTags = [
   "a",
   "abbr",
@@ -160,65 +126,112 @@ const standardTags = [
   "x-ms-webview",
   "xmp"
 ].reduce((sum, cur) => {
-  sum[cur] = true;
+  sum[cur.toUpperCase()] = true;
   return sum;
 }, <{ [key: string]: boolean }>{});
-const filesCache = new Map<TagName, ComponentDefinition>();
 
-// Promisify so we can async/await //////
+// internal types ////////
 
-async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents | undefined> {
-  const resource = "./components/" + tag + "." + ext;
-  if (ext === "js") {
-    const exported = await SystemJS.import(resource).catch(_ => undefined);
-    if (!exported) return undefined;
-    if (exported.default) return exported.default;
-    const validIdentifer = tag.replace(/-|\./g, "");
-    if (exported[validIdentifer]) return exported[validIdentifer];
-    console.error(tag + ".js should have an exported controller class.  Either the class is missing, isn't exported as the default, or isn't exported as", validIdentifer);
-    return undefined;
-  }
-  return new Promise<FileContents>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("GET", resource);
-    xhr.onerror = reject;
-    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300 ? xhr.response : "");
-    xhr.send();
-  });
+interface TagName extends String {}
+interface FileContents extends String {}
+interface FileExtension extends String {}
+interface ControllerCtor {
+  new (instance?: ComponentInstance): Controller;
+}
+interface Dictionary {
+  [key: string]: any;
+}
+interface Controller extends ControllerCtor, Dictionary {}
+
+type ElementWithController = Element & { controller?: Controller };
+
+interface ComponentDefinition {
+  css: FileContents | undefined;
+  html: FileContents | undefined;
+  js: ControllerCtor | undefined;
+  loading?: Promise<any>;
 }
 
+class Substitution {
+  propertyName: string;
+  regex: RegExp;
+
+  constructor(key: string) {
+    this.propertyName = key;
+    this.regex = new RegExp(`{${key}}`, "g");
+  }
+}
+
+interface ComponentInstance {
+  definition: ComponentDefinition;
+  element: ElementWithController;
+  children?: ComponentInstance[]; // basically @ViewChildren(), so only custom components which are direct children of this custom component
+  controller?: Controller;
+  substitutions: Substitution[]; // cache
+}
+
+export interface EventHandler {
+  (event: Event, element: Element): void;
+}
+
+// pretty up the browser
+
+declare global {
+  interface Array<T> {
+    splitFilter(fn: (value: T) => boolean): { yes: T[]; no: T[] };
+  }
+  interface HTMLCollectionBase {
+    map<U>(callbackfn: (value: Element) => U, thisArg?: any): U[];
+    filter(callbackfn: (value: Element) => boolean, thisArg?: any): Element[];
+    reduce<U>(callbackfn: (previousValue: U, currentValue: Element) => U, initialValue: U): U;
+    splitFilter(fn: (value: Element) => boolean): { yes: Element[]; no: Element[] };
+  }
+}
+Array.prototype.splitFilter = function splitFilter<T>(this: Array<T>, fn: (value: T) => boolean): { yes: T[]; no: T[] } {
+  const retval = { yes: [] as T[], no: [] as T[] };
+  for (const item of this) {
+    const whichList = fn(item) ? retval.yes : retval.no;
+    whichList.push(item);
+  }
+  return retval;
+};
+HTMLCollection.prototype.map = Array.prototype.map;
+HTMLCollection.prototype.filter = Array.prototype.filter;
+HTMLCollection.prototype.reduce = Array.prototype.reduce;
+HTMLCollection.prototype.splitFilter = Array.prototype.splitFilter;
+
+// static data ///////////
+
+const surroundTag = "INNERHTML";
+const filesCache = new Map<TagName, ComponentDefinition>();
 const browserToParseHTML = () => new Promise(r => setTimeout(r));
 
-// scans the direct children of the passed-in HtmlElement for custom components. If any, recurses into them, and set the .children to what the recursion returns.
-async function scanLoadAndInstantiate(parentElement: Element): Promise<ComponentInstance[]> {
-  const instantiating: Promise<ComponentInstance>[] = [];
-  for (var i = parentElement.children.length - 1; i >= 0; i--) {
-    const element: ElementWithController = parentElement.children[i];
-    const tag: TagName = element.tagName.toLowerCase();
-
-    // check descendents of div, span, etc. but don't send them on to the next step;
-    // we don't memorize the children of a div even if they are custom components
-    if (standardTags[tag as string]) scanLoadAndInstantiate(element);
-    else instantiating.push(loadAndInstantiateComponent(tag, element));
-  }
-  return Promise.all(instantiating);
+// load one file part (html/css/js) of a component and return file's contents as a string, or undefined if 404
+async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents | undefined> {
+  tag = tag.toLowerCase();
+  const resource = "./components/" + tag + "." + ext;
+  if (ext !== "js") return fetch(resource).then(response => response.text());
+  const exported = await SystemJS.import(resource).catch(_ => undefined);
+  if (!exported) return undefined;
+  if (exported.default) return exported.default;
+  const validIdentifer = tag.replace(/-|\./g, "");
+  if (exported[validIdentifer]) return exported[validIdentifer];
+  console.error(tag + ".js should have an exported controller class.  Either the class is missing, isn't exported as the default, or isn't exported as", validIdentifer);
+  return undefined;
 }
 
-// as a separate async function, this won't block the for-loop above
-async function loadAndInstantiateComponent(tag: TagName, element: ElementWithController): Promise<ComponentInstance> {
-  let definition: ComponentDefinition | undefined = filesCache.get(tag);
+// given a custom element: load from server, cache it, instantiate it,
+async function loadAndInstantiateComponent(element: ElementWithController): Promise<ComponentInstance> {
+  let definition = filesCache.get(element.tagName);
 
   if (!definition) {
     definition = {} as ComponentDefinition;
-    filesCache.set(tag, definition);
+    filesCache.set(element.tagName, definition);
     definition.loading = Promise.all([
-      getFile(tag, "html").then(fc => (definition!.html = fc)),
-      getFile(tag, "css").then(fc => (definition!.css = fc)),
-      getFile(tag, "js").then(fc => (definition!.js = fc as any))
-    ]).then(r => {
-      definition!.loading = undefined;
-      return r;
-    });
+      getFile(element.tagName, "html").then(fc => (definition!.html = fc)),
+      getFile(element.tagName, "css").then(fc => (definition!.css = fc)),
+      getFile(element.tagName, "js").then(fc => (definition!.js = fc as any))
+    ]).then(r => (definition!.loading = undefined));
   }
 
   if (definition.loading) await definition.loading;
@@ -238,9 +251,9 @@ async function loadAndInstantiateComponent(tag: TagName, element: ElementWithCon
   if (definition.js) {
     try {
       element.controller = componentInstance.controller = new definition.js(componentInstance);
-      componentInstance.substitutions = Object.keys(componentInstance.controller);
+      componentInstance.substitutions = Object.keys(componentInstance.controller).map(key => new Substitution(key));
     } catch (e) {
-      console.error(tag, "controller ctor threw", e);
+      console.error(element.tagName.toLowerCase(), "controller ctor threw", e);
     }
   }
 
@@ -250,22 +263,31 @@ async function loadAndInstantiateComponent(tag: TagName, element: ElementWithCon
 
     if (oldContent) {
       await browserToParseHTML();
-      const placeContentHeres = element.getElementsByTagName(surroundTag);
-      for (var i = placeContentHeres.length - 1; i >= 0; i--) placeContentHeres[i].outerHTML = oldContent;
+      element.getElementsByTagName(surroundTag).map(each => (each.outerHTML = oldContent));
     }
 
     await browserToParseHTML();
-    componentInstance.children = await scanLoadAndInstantiate(element);
+    componentInstance.children = await scan(element);
   }
 
   return componentInstance;
 }
 
 function substitutions(html: string, component: ComponentInstance): string {
-  for (const sub of component.substitutions) html = html.replace(new RegExp("{" + sub + "}", "g"), (component.controller as any)[sub]);
+  for (const sub of component.substitutions) html = html.replace(sub.regex, component.controller![sub.propertyName]);
   return html;
+}
+
+// scans the direct children of the passed-in HtmlElement for custom components.
+// children which aren't simply have their grandchildren scanned, recursively.
+// children which are are instantiated, loaded first if needed.
+async function scan(parentElement: Element): Promise<ComponentInstance[]> {
+  const { yes, no } = parentElement.children.splitFilter(element => standardTags[element.tagName]);
+  const loadingAndInstantiatingComponents = no.map(loadAndInstantiateComponent);
+  yes.forEach(scan);
+  return Promise.all(loadingAndInstantiatingComponents);
 }
 
 // go ///////////
 
-scanLoadAndInstantiate(document.body);
+scan(document.body);
