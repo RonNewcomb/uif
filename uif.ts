@@ -160,7 +160,7 @@ class Substitution {
   constructor(key: string, ctrl: Controller) {
     this.propertyName = key;
     this.isFunction = typeof ctrl[key] === "function";
-    this.regex = this.isFunction ? new RegExp(`{${key}\\([^)]*\\)}`, "g") : new RegExp(`{${key}}`, "g");
+    this.regex = this.isFunction ? new RegExp(`{(${key})\\(([^)]*)\\)}`) : new RegExp(`{${key}}`, "g");
   }
 }
 
@@ -246,10 +246,18 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
 }
 
 function substitutions(html: string, component: ComponentInstance): string {
+  if (!component.controller) return html;
   for (const sub of component.substitutions) {
     if (sub.isFunction) {
-      html = html.replace(sub.regex, "FUNCTION**");
-    } else html = html.replace(sub.regex, component.controller![sub.propertyName]);
+      for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
+        const functionName = found[1];
+        const parameterList = JSON.parse("[" + (found[2] || "") + "]");
+        const val = (component.controller[functionName] as Function).apply(component.controller, parameterList);
+        html = html.replace(sub.regex, val);
+      }
+    } else {
+      html = html.replace(sub.regex, component.controller[sub.propertyName]);
+    }
   }
   return html;
 }

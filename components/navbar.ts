@@ -15,7 +15,8 @@ export default class {
     close() {
     }
 
-    hello() {
+    hello(i:number, str:string) {
         console.log("hello world");
+        return `hello ${str} youre #${i}!`;
     }
 }
