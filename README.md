@@ -11,11 +11,11 @@ a toy UI framework
 * Said default exported class is called the controller.
 * HTML template uses single braces to delimit substitutions. The possible substitutions are restricted to the controller's own properties. So, `{propname}` or `{methodcall(arg,arg)}` only. 
 * You can put content between the opening and closing tags, to be inserted where `{innerHTML}` appears in the enclosing component's template.
+* Event handler code is always in the controller, and the name is restricted to beginning with the event's name.  So `onClick`, `onClickEdit`, `onClickOpen` are all valid names for an onClick handler.
+* Event handlers are wired to events merely by listing the method name: `<button onClickEdit />`.  It's more succint than `<button onClick={onClickEdit} />` which doesn't add anything other than escaping a resonable naming convention.  Note that event handler methods, as attributes, aren't surrounded by curly braces like other substitutions.
 
 ## ToDo 
 
-* Event handler code is always in the controller, and the name is restricted to beginning with the event's name.  So `onClick`, `onClickEdit`, `onClickOpen` are all valid names for an onClick handler.
-* Event handlers are wired to events merely by listing the method name: `<button onClickEdit />`.  It's more succint than `<button onClick={onClickEdit} />` which doesn't add anything other than escaping a resonable naming convention.  Note that event handler methods, as attributes, aren't surrounded by curly braces like other substitutions.
 * Form field validation methods must begin with `val` followed by a capital letter: `<input type=text valMustBeVegetable />`.  The controller method signature is `<T>(val: T, form: { [key: string]: any }) => boolean | string | Promise<boolean | string>`.  Ignoring Promises for a moment, any truthy value means validation passed, except if the return type is a string in which case the truthy/falsy is swapped.  The string contains a reason that the validation failed.  If a Promise is  
 * The `val` functions do not need to be put directly on the `input` element.  When placed on a non-input element like `div` it will find the input element within the element its placed on. This is assumed to be the common case, being placed on an element that wraps both input and styled error message so they can both use pure CSS to hide/show help text.
 * Failed validations appear in a controller property called `errors`.  It's falsy if no errors.
