@@ -138,12 +138,22 @@ interface FileExtension extends String {}
 interface ControllerCtor {
   new (instance?: ComponentInstance): Controller;
 }
-interface Dictionary {
-  [key: string]: any;
+interface Dictionary<T = any> {
+  [key: string]: T;
 }
-interface Controller extends ControllerCtor, Dictionary {}
+interface Controller extends ControllerCtor, Dictionary<any> {}
+
+interface ValidationFn {
+  (val: any, form: any): boolean | Promise<boolean>;
+}
+interface ValErrorsController {
+  errors?: ArrayKeys<Dictionary<string>>;
+}
+interface ValidatingController extends Dictionary<ValidationFn> /*,ValErrorsController */ {}
 
 type ElementWithController = Element & { controller?: Controller };
+type ElementWithValue = Element & { value: string; name?: string };
+type ArrayKeys<T> = Array<T> & Dictionary<T>;
 
 interface ComponentDefinition {
   css: FileContents | undefined;
@@ -170,9 +180,16 @@ export interface EventHandler {
   (event: Event, element: Element): void;
 }
 
+declare global {
+  interface Window {
+    uifVal: (inputElement: ElementWithValue, component: ComponentInstance, form: any, ...valFunctionNames: (keyof ValidatingController)[]) => void;
+  }
+}
+
 // static data ///////////
 
 const innerHtmlRegex = new RegExp(`{innerHTML}`, "g");
+const inputFormFields = ["TEXTAREA", "INPUT", "SELECT"];
 const filesCache = new Map<TagName, ComponentDefinition>();
 const browserToParseHTML = () => new Promise(r => setTimeout(r));
 const eventTypes = Object.keys(window)
@@ -184,7 +201,7 @@ const eventTypes = Object.keys(window)
 const RegexPerSubType: Map<SubstitutionTypes, (key: string) => RegExp> = new Map([
   [SubstitutionTypes.MethodInvocation, key => new RegExp(`{(${key})\\(([^)]*)\\)}`)],
   [SubstitutionTypes.EventHandler, key => new RegExp(`\\s${key}(?!=)\\b(\\(([^)]*)\\))?`, "i")],
-  [SubstitutionTypes.Validator, key => new RegExp(`\\b${key}\\b`, "gi")],
+  [SubstitutionTypes.Validator, key => new RegExp(`\\s${key}(?!=)\\b`, "gi")],
   [SubstitutionTypes.Property, key => new RegExp(`{${key}}`, "g")]
 ]);
 
@@ -197,7 +214,7 @@ class Substitution {
   constructor(key: string, ctrl: Controller) {
     this.key = key;
     if (typeof ctrl[key] !== "function") this.type = SubstitutionTypes.Property;
-    else if (key.startsWith("val")) this.type = SubstitutionTypes.Validator;
+    else if (key.startsWith("must")) this.type = SubstitutionTypes.Validator;
     else if (!key.startsWith("on")) this.type = SubstitutionTypes.MethodInvocation;
     else {
       key = key.toLowerCase();
@@ -208,15 +225,89 @@ class Substitution {
   }
 }
 
+// useful at runtime
+
+const protobj = Object.getPrototypeOf(new Object());
+function getMembers(obj: object) {
+  const p: string[] = [];
+  for (; obj && obj != protobj; obj = Object.getPrototypeOf(obj)) {
+    const op: string[] = Object.getOwnPropertyNames(obj);
+    for (let i = 0; i < op.length; i++) if (p.indexOf(op[i]) == -1) p.push(op[i]);
+  }
+  return p;
+}
+
+window.uifVal = async (inputElement: ElementWithValue, component: ComponentInstance, form: any) => {
+  const valFunctionNamesLowercased = Array.from(inputElement.attributes)
+    .map(el => el.name)
+    .filter(n => n.startsWith("must"));
+  if (!component || !component.controller) {
+    console.error("Component lacks .js controller on which to put validator functions like", valFunctionNamesLowercased.join(", "));
+    return;
+  }
+  const valFunctionNames = getMembers(component.controller).filter(each => each.startsWith("must")); // TODO cache
+  console.log("uifVal", inputElement, component, form, valFunctionNamesLowercased);
+  const val = inputElement.value;
+  for (const valFnNameLowercased of valFunctionNamesLowercased) {
+    const valFnName = valFunctionNames.find(f => f.toLowerCase() === valFnNameLowercased);
+    if (!valFnName) {
+      console.error("Undefined validation function", valFnNameLowercased, "Options were", valFunctionNames.map(f => f.toLowerCase()).join(", "));
+      return;
+    }
+    const valFn = component.controller[valFnName];
+    const result = valFn(val, form);
+    if (!(result instanceof Promise)) {
+      setClearErr(inputElement, valFnName, result);
+    } else {
+      inputElement.setAttribute("validating", "");
+      result.then(r => setClearErr(inputElement, valFnName, r));
+    }
+  }
+};
+
+function setClearErr(el: Element, valFnName: string | number, result: boolean) {
+  if (!result) setValError(el, valFnName);
+  else clearValError(el, valFnName);
+}
+function clearValError(el: Element, valFnName: string | number) {
+  el.removeAttribute(valFnName.toString());
+}
+function setValError(el: Element, valFnName: string | number) {
+  el.setAttribute(valFnName.toString(), "");
+}
+
+// // set either onBlur / onChange to this. Transform the list of val* functions to onChange="uifVal(this, closest('[controller]'), val*)"
+// const uifVal = async (wrapperElement: ElementWithValue, ctrl: ValidatingController, form: any, ...rest: (keyof ValidatingController)[]) => {
+//   const fields: ElementWithValue[] = inputFormFields.includes(wrapperElement.tagName) ? [wrapperElement] : Array.from(wrapperElement.querySelectorAll(inputFormFields.join(",")));
+//   const val = fields.reduce<ArrayKeys<string>>((retval, f) => {
+//     retval.push(f.value);
+//     if (f.name) retval[f.name] = f.value;
+//     return retval;
+//   }, [] as any);
+//   const results:{ result: string|boolean, name:}[] = [];
+//   const gettingResults = rest.map(key => ctrl[key](val, form)).map(result => Promise.resolve(result));
+//   const results = await Promise.all(gettingResults);
+//   if (results.every(r => (typeof r === "string" ? r === "" : !!r))) {
+//     (ctrl as ValErrorsController).errors = undefined;
+//     return;
+//   }
+
+// };
+
+// initialization
+
 // load one file part (html/css/js) of a component and return file's contents as a string, or undefined if 404
 async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents | undefined> {
   tag = tag.toLowerCase();
   const resource = "./components/" + tag + "." + ext;
-  if (ext !== "js") return fetch(resource).then(response => response.text());
+  if (ext !== "js")
+    return fetch(resource)
+      .then(response => response.text())
+      .catch(_ => undefined);
   const exported = await SystemJS.import(resource).catch(_ => undefined);
   if (!exported) return undefined;
   if (exported.default) return exported.default;
-  console.error(tag + ".js should have an default export class");
+  console.error(tag + ".js should have a default export class");
   return undefined;
 }
 
@@ -280,32 +371,26 @@ function substitutions(html: string, component: ComponentInstance): string {
           break;
         case SubstitutionTypes.MethodInvocation:
           for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
-            const parameterList = JSON.parse("[" + (found[2] || "") + "]");
+            const parameterList = JSON.parse(`[${found[2] || ""}]`);
             const val = (component.controller[sub.key] as Function).apply(component.controller, parameterList);
             html = html.replace(sub.regex, val);
           }
           break;
         case SubstitutionTypes.EventHandler:
           for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
-            const parameterList = found[2] ? `(${found[2]},event,this)` : "(event,this)";
-            html = html.replace(sub.regex, ` ${sub.eventType}="closest('[component]').controller.${sub.key}${parameterList}"`);
+            const parameterList = found[2] ? `${found[2]},` : "";
+            html = html.replace(sub.regex, ` ${sub.eventType}="closest('[component]').controller.${sub.key}(${parameterList}event,this)"`);
           }
           break;
         case SubstitutionTypes.Validator:
+          for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
+            const parameterList = found[2] ? `${found[2]},` : "";
+            html = html.replace(sub.regex, ` ${sub.key}="" onChange="uifVal(this,closest('[component]'),closest('form'))"`);
+          }
           break;
       }
     }
   return html;
-}
-
-const protobj = Object.getPrototypeOf(new Object());
-function getMembers(obj: object) {
-  const p: string[] = [];
-  for (; obj && obj != protobj; obj = Object.getPrototypeOf(obj)) {
-    const op: string[] = Object.getOwnPropertyNames(obj);
-    for (let i = 0; i < op.length; i++) if (p.indexOf(op[i]) == -1) p.push(op[i]);
-  }
-  return p;
 }
 
 async function scan(element: Element): Promise<any> {
