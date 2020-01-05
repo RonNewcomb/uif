@@ -130,7 +130,7 @@ const standardTags = [
   return sum;
 }, <{ [key: string]: boolean }>{});
 
-// internal types ////////
+// interfaces ////////
 
 interface TagName extends String {}
 interface FileContents extends String {}
@@ -152,16 +152,11 @@ interface ComponentDefinition {
   loading?: Promise<any>;
 }
 
-class Substitution {
-  propertyName: string;
-  isFunction: boolean;
-  regex: RegExp;
-
-  constructor(key: string, ctrl: Controller) {
-    this.propertyName = key;
-    this.isFunction = typeof ctrl[key] === "function";
-    this.regex = this.isFunction ? new RegExp(`{(${key})\\(([^)]*)\\)}`) : new RegExp(`{${key}}`, "g");
-  }
+const enum SubstitutionTypes {
+  Property,
+  MethodInvocation,
+  EventHandler,
+  Validator
 }
 
 interface ComponentInstance {
@@ -180,6 +175,36 @@ export interface EventHandler {
 const innerHtmlRegex = new RegExp(`{innerHTML}`, "g");
 const filesCache = new Map<TagName, ComponentDefinition>();
 const browserToParseHTML = () => new Promise(r => setTimeout(r));
+const eventTypes = Object.keys(window).filter(k => k.startsWith("on")).sort((a, b) => b.length - a.length);
+
+// setup ///////////////
+
+const RegexPerSubType: Map<SubstitutionTypes, (key: string) => RegExp> = new Map([
+  [SubstitutionTypes.MethodInvocation, key => new RegExp(`{(${key})\\(([^)]*)\\)}`)],
+  [SubstitutionTypes.EventHandler, key => new RegExp(`\\b${key}\\b`, "gi")],
+  [SubstitutionTypes.Validator, key => new RegExp(`\\b${key}\\b`, "gi")],
+  [SubstitutionTypes.Property, key => new RegExp(`{${key}}`, "g")]
+]);
+
+class Substitution {
+  propertyName: string;
+  type: SubstitutionTypes;
+  regex: RegExp;
+  eventType?: string;
+
+  constructor(key: string, ctrl: Controller) {
+    this.propertyName = key;
+    if (typeof ctrl[key] !== "function") this.type = SubstitutionTypes.Property;
+    else if (key.startsWith("val")) this.type = SubstitutionTypes.Validator;
+    else if (!key.startsWith("on")) this.type = SubstitutionTypes.MethodInvocation;
+    else {
+      key = key.toLowerCase();
+      this.eventType = eventTypes.find(et => key.startsWith(et));
+      this.type = this.eventType ? SubstitutionTypes.EventHandler : SubstitutionTypes.MethodInvocation;
+    }
+    this.regex = RegexPerSubType.get(this.type)!(key);
+  }
+}
 
 // load one file part (html/css/js) of a component and return file's contents as a string, or undefined if 404
 async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents | undefined> {
@@ -189,9 +214,7 @@ async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents |
   const exported = await SystemJS.import(resource).catch(_ => undefined);
   if (!exported) return undefined;
   if (exported.default) return exported.default;
-  const validIdentifer = tag.replace(/-|\./g, "");
-  if (exported[validIdentifer]) return exported[validIdentifer];
-  console.error(tag + ".js should have an exported controller class.  Either the class is missing, isn't exported as the default, or isn't exported as", validIdentifer);
+  console.error(tag + ".js should have an default export class");
   return undefined;
 }
 
@@ -248,15 +271,24 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
 function substitutions(html: string, component: ComponentInstance): string {
   if (!component.controller) return html;
   for (const sub of component.substitutions) {
-    if (sub.isFunction) {
-      for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
-        const functionName = found[1];
-        const parameterList = JSON.parse("[" + (found[2] || "") + "]");
-        const val = (component.controller[functionName] as Function).apply(component.controller, parameterList);
-        html = html.replace(sub.regex, val);
-      }
-    } else {
-      html = html.replace(sub.regex, component.controller[sub.propertyName]);
+    switch (sub.type) {
+      case SubstitutionTypes.Property:
+        html = html.replace(sub.regex, component.controller[sub.propertyName]);
+        break;
+      case SubstitutionTypes.MethodInvocation:
+        for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
+          const functionName = found[1];
+          const parameterList = JSON.parse("[" + (found[2] || "") + "]");
+          const val = (component.controller[functionName] as Function).apply(component.controller, parameterList);
+          html = html.replace(sub.regex, val);
+        }
+        break;
+      case SubstitutionTypes.EventHandler:
+        console.log("got here");
+        html = html.replace(sub.regex, sub.eventType + '="' + "this.parentNode.parentNode.controller." + sub.propertyName + '(event,this)"');
+        break;
+      case SubstitutionTypes.Validator:
+        break;
     }
   }
   return html;

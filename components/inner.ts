@@ -1,10 +1,8 @@
 import SomeService from "../services/SomeService";
-
-console.log("inner.ts is evaluated");
  
 SomeService.printer();
 
-export class inner { 
+export default class inner { 
     constructor() { 
         console.log("innerclass ctor");
     }
