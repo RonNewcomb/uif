@@ -15,6 +15,10 @@ export default class {
     console.log("navbar.open() called with", x, "(a", typeof x + ") and event", event, "and element", element, "and this", this, "and title", this.title);
   }
 
+  onclick2(x: number, event: Event, element: Element): void {
+    console.log("navbar.onClick2() called with", x, "(a", typeof x + ") and event", event, "and element", element, "and this", this);
+  }
+
   close() {}
 
   hello(i: number, str: string) {

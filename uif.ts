@@ -183,19 +183,19 @@ const eventTypes = Object.keys(window)
 
 const RegexPerSubType: Map<SubstitutionTypes, (key: string) => RegExp> = new Map([
   [SubstitutionTypes.MethodInvocation, key => new RegExp(`{(${key})\\(([^)]*)\\)}`)],
-  [SubstitutionTypes.EventHandler, key => new RegExp(`\\b${key}\\b`, "gi")],
+  [SubstitutionTypes.EventHandler, key => new RegExp(`\\s${key}(?!=)\\b(\\(([^)]*)\\))?`, "i")],
   [SubstitutionTypes.Validator, key => new RegExp(`\\b${key}\\b`, "gi")],
   [SubstitutionTypes.Property, key => new RegExp(`{${key}}`, "g")]
 ]);
 
 class Substitution {
-  propertyName: string;
+  key: string;
   type: SubstitutionTypes;
   regex: RegExp;
   eventType?: string;
 
   constructor(key: string, ctrl: Controller) {
-    this.propertyName = key;
+    this.key = key;
     if (typeof ctrl[key] !== "function") this.type = SubstitutionTypes.Property;
     else if (key.startsWith("val")) this.type = SubstitutionTypes.Validator;
     else if (!key.startsWith("on")) this.type = SubstitutionTypes.MethodInvocation;
@@ -276,18 +276,20 @@ function substitutions(html: string, component: ComponentInstance): string {
     for (const sub of component.substitutions) {
       switch (sub.type) {
         case SubstitutionTypes.Property:
-          html = html.replace(sub.regex, component.controller[sub.propertyName]);
+          html = html.replace(sub.regex, component.controller[sub.key]);
           break;
         case SubstitutionTypes.MethodInvocation:
           for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
-            const functionName = found[1];
             const parameterList = JSON.parse("[" + (found[2] || "") + "]");
-            const val = (component.controller[functionName] as Function).apply(component.controller, parameterList);
+            const val = (component.controller[sub.key] as Function).apply(component.controller, parameterList);
             html = html.replace(sub.regex, val);
           }
           break;
         case SubstitutionTypes.EventHandler:
-          html = html.replace(sub.regex, sub.eventType + "=\"closest('[component]').controller." + sub.propertyName + '(event,this)"');
+          for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
+            const parameterList = found[2] ? `(${found[2]},event,this)` : "(event,this)";
+            html = html.replace(sub.regex, ` ${sub.eventType}="closest('[component]').controller.${sub.key}${parameterList}"`);
+          }
           break;
         case SubstitutionTypes.Validator:
           break;
