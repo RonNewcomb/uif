@@ -1,5 +1,5 @@
 interface EventHandler {
-  (e: Event): void;
+  (ev: Event, el: Element): void;
 }
 
 console.log("navbar.js is evaluated");
@@ -22,5 +22,7 @@ export default class {
     return `hello ${str} youre #${i}!`;
   }
 
-  onClickMe: EventHandler = e => console.log("onClickMe", e);
+  onClickMe: EventHandler = (ev, el) => console.log("onClickMe", ev, el);
+
+  onClickopen = () => console.log("onclickOpen");
 }

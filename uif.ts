@@ -175,7 +175,9 @@ export interface EventHandler {
 const innerHtmlRegex = new RegExp(`{innerHTML}`, "g");
 const filesCache = new Map<TagName, ComponentDefinition>();
 const browserToParseHTML = () => new Promise(r => setTimeout(r));
-const eventTypes = Object.keys(window).filter(k => k.startsWith("on")).sort((a, b) => b.length - a.length);
+const eventTypes = Object.keys(window)
+  .filter(k => k.startsWith("on"))
+  .sort((a, b) => b.length - a.length);
 
 // setup ///////////////
 
@@ -220,6 +222,7 @@ async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents |
 
 // given a custom element: load from server, cache it, instantiate it,
 async function loadAndInstantiateComponent(element: ElementWithController): Promise<ComponentInstance> {
+  element.setAttribute("component", "");
   let definition = filesCache.get(element.tagName);
 
   if (!definition) {
@@ -269,28 +272,27 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
 }
 
 function substitutions(html: string, component: ComponentInstance): string {
-  if (!component.controller) return html;
-  for (const sub of component.substitutions) {
-    switch (sub.type) {
-      case SubstitutionTypes.Property:
-        html = html.replace(sub.regex, component.controller[sub.propertyName]);
-        break;
-      case SubstitutionTypes.MethodInvocation:
-        for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
-          const functionName = found[1];
-          const parameterList = JSON.parse("[" + (found[2] || "") + "]");
-          const val = (component.controller[functionName] as Function).apply(component.controller, parameterList);
-          html = html.replace(sub.regex, val);
-        }
-        break;
-      case SubstitutionTypes.EventHandler:
-        console.log("got here");
-        html = html.replace(sub.regex, sub.eventType + '="' + "this.parentNode.parentNode.controller." + sub.propertyName + '(event,this)"');
-        break;
-      case SubstitutionTypes.Validator:
-        break;
+  if (component.controller)
+    for (const sub of component.substitutions) {
+      switch (sub.type) {
+        case SubstitutionTypes.Property:
+          html = html.replace(sub.regex, component.controller[sub.propertyName]);
+          break;
+        case SubstitutionTypes.MethodInvocation:
+          for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
+            const functionName = found[1];
+            const parameterList = JSON.parse("[" + (found[2] || "") + "]");
+            const val = (component.controller[functionName] as Function).apply(component.controller, parameterList);
+            html = html.replace(sub.regex, val);
+          }
+          break;
+        case SubstitutionTypes.EventHandler:
+          html = html.replace(sub.regex, sub.eventType + "=\"closest('[component]').controller." + sub.propertyName + '(event,this)"');
+          break;
+        case SubstitutionTypes.Validator:
+          break;
+      }
     }
-  }
   return html;
 }
 
