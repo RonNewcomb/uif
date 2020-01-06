@@ -1,0 +1,45 @@
+veggie-form {
+  display: block;
+}
+
+veggie-form > * {
+  display: block;
+}
+
+[needsWork] input,
+[needsWork] select,
+[needsWork] textarea {
+  border: 1px solid red;
+  background-color: pink;
+}
+
+[approval] input,
+[approval] select,
+[approval] textarea {
+  border: 1px solid green;
+  background-color: lightgreen;
+}
+
+[for="mustBeAnimal"] {
+  display: none;
+}
+
+[mustBeAnimal] [for="mustBeAnimal"] {
+  display: block;
+}
+
+[for="mustBeMineral"] {
+  display: none;
+}
+
+[mustBeMineral] [for="mustBeMineral"] {
+  display: block;
+}
+
+[for="mustBeVegetable"] {
+  display: none;
+}
+
+[mustBeMineral] [for="mustBeVegetable"] {
+  display: block;
+}
