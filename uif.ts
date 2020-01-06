@@ -153,7 +153,7 @@ interface ValidatingController extends Dictionary<ValidationFn> /*,ValErrorsCont
 
 type ElementWithController = Element & { controller?: Controller };
 type ElementWithValidators = Element & { uifValidators: string[] };
-type ElementWithValue = ElementWithValidators & { value: string; name?: string };
+type ElementWithValue = Element & { value: string; name?: string };
 type ArrayKeys<T> = Array<T> & Dictionary<T>;
 
 interface ComponentDefinition {
@@ -183,7 +183,7 @@ export interface EventHandler {
 
 declare global {
   interface Window {
-    uifVal: (inputElement: ElementWithValue, event: Event) => void;
+    uifVal: (inputElement: ElementWithValidators, event: Event) => void;
   }
 }
 
@@ -240,37 +240,39 @@ function getMembers(obj: object) {
 
 // form validation
 
-window.uifVal = (inputElement: ElementWithValue, event: Event) => {
-  const componentElement = inputElement.closest("[component]") as ElementWithController;
+window.uifVal = (wrapperElement: ElementWithValidators, event: Event) => {
+  const inputElement = (event.target as any) as ElementWithValue;
+
+  const componentElement = wrapperElement.closest("[component]") as ElementWithController;
   if (!componentElement) {
-    console.error("Form input field on", inputElement, "is outside of uif-controlled DOM");
+    console.error("Form input field on", wrapperElement, "is outside of uif-controlled DOM");
     return;
   }
 
   const ctrl = componentElement.controller;
   if (!ctrl) {
-    console.error("Component lacks .js controller on which to put validator functions like", inputElement.uifValidators.join(", "));
+    console.error("Component lacks .js controller on which to put validator functions like", wrapperElement.uifValidators.join(", "));
     return;
   }
 
-  const form = inputElement.closest("form");
+  const form = wrapperElement.closest("form");
 
   let reviewing = 0;
   let approvals = 0;
   let needsWorks = 0;
-  for (const valFnName of inputElement.uifValidators) {
+  for (const valFnName of wrapperElement.uifValidators) {
     const result = ctrl[valFnName](inputElement.value, form);
     if (!(result instanceof Promise)) {
       result ? approvals++ : needsWorks++;
-      annotateElement(inputElement, valFnName, result);
+      annotateElement(wrapperElement, valFnName, result);
     } else {
       reviewing++;
-      result.catch(e => (e ? e.toString() : valFnName + " threw")).then(r => annotateElement(inputElement, valFnName, r, true));
+      result.catch(e => (e ? e.toString() : valFnName + " threw")).then(r => annotateElement(wrapperElement, valFnName, r, true));
     }
   }
-  setReviewing(inputElement, reviewing);
-  if (needsWorks > 0) setIsGood(inputElement, false);
-  if (needsWorks === 0 && reviewing === 0) setIsGood(inputElement, true);
+  setReviewing(wrapperElement, reviewing);
+  if (needsWorks > 0) setIsGood(wrapperElement, false);
+  if (needsWorks === 0 && reviewing === 0) setIsGood(wrapperElement, true);
 };
 
 function annotateElement(el: Element, valFnName: string | number, result: boolean | string, decreaseReviewing: boolean = false) {
