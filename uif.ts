@@ -152,7 +152,8 @@ interface ValErrorsController {
 interface ValidatingController extends Dictionary<ValidationFn> /*,ValErrorsController */ {}
 
 type ElementWithController = Element & { controller?: Controller };
-type ElementWithValue = Element & { value: string; name?: string };
+type ElementWithValidators = Element & { uifValidators: string[] };
+type ElementWithValue = ElementWithValidators & { value: string; name?: string };
 type ArrayKeys<T> = Array<T> & Dictionary<T>;
 
 interface ComponentDefinition {
@@ -182,7 +183,7 @@ export interface EventHandler {
 
 declare global {
   interface Window {
-    uifVal: (inputElement: ElementWithValue, component: ComponentInstance, form: any, ...valFunctionNames: (keyof ValidatingController)[]) => void;
+    uifVal: (inputElement: ElementWithValue, event: Event) => void;
   }
 }
 
@@ -225,7 +226,7 @@ class Substitution {
   }
 }
 
-// useful at runtime
+// runtime
 
 const protobj = Object.getPrototypeOf(new Object());
 function getMembers(obj: object) {
@@ -237,43 +238,67 @@ function getMembers(obj: object) {
   return p;
 }
 
-window.uifVal = async (inputElement: ElementWithValue, component: ComponentInstance, form: any) => {
-  const valFunctionNamesLowercased = Array.from(inputElement.attributes)
-    .map(el => el.name)
-    .filter(n => n.startsWith("must"));
-  if (!component || !component.controller) {
-    console.error("Component lacks .js controller on which to put validator functions like", valFunctionNamesLowercased.join(", "));
+// form validation
+
+window.uifVal = (inputElement: ElementWithValue, event: Event) => {
+  const componentElement = inputElement.closest("[component]") as ElementWithController;
+  if (!componentElement) {
+    console.error("Form input field on", inputElement, "is outside of uif-controlled DOM");
     return;
   }
-  const valFunctionNames = getMembers(component.controller).filter(each => each.startsWith("must")); // TODO cache
-  console.log("uifVal", inputElement, component, form, valFunctionNamesLowercased);
-  const val = inputElement.value;
-  for (const valFnNameLowercased of valFunctionNamesLowercased) {
-    const valFnName = valFunctionNames.find(f => f.toLowerCase() === valFnNameLowercased);
-    if (!valFnName) {
-      console.error("Undefined validation function", valFnNameLowercased, "Options were", valFunctionNames.map(f => f.toLowerCase()).join(", "));
-      return;
-    }
-    const valFn = component.controller[valFnName];
-    const result = valFn(val, form);
+
+  const ctrl = componentElement.controller;
+  if (!ctrl) {
+    console.error("Component lacks .js controller on which to put validator functions like", inputElement.uifValidators.join(", "));
+    return;
+  }
+
+  const form = inputElement.closest("form");
+
+  let reviewing = 0;
+  let approvals = 0;
+  let needsWorks = 0;
+  for (const valFnName of inputElement.uifValidators) {
+    const result = ctrl[valFnName](inputElement.value, form);
     if (!(result instanceof Promise)) {
-      setClearErr(inputElement, valFnName, result);
+      result ? approvals++ : needsWorks++;
+      annotateElement(inputElement, valFnName, result);
     } else {
-      inputElement.setAttribute("validating", "");
-      result.then(r => setClearErr(inputElement, valFnName, r));
+      reviewing++;
+      result.catch(e => (e ? e.toString() : valFnName + " threw")).then(r => annotateElement(inputElement, valFnName, r, true));
     }
   }
+  setReviewing(inputElement, reviewing);
+  if (needsWorks > 0) setIsGood(inputElement, false);
+  if (needsWorks === 0 && reviewing === 0) setIsGood(inputElement, true);
 };
 
-function setClearErr(el: Element, valFnName: string | number, result: boolean) {
-  if (!result) setValError(el, valFnName);
-  else clearValError(el, valFnName);
+function annotateElement(el: Element, valFnName: string | number, result: boolean | string, decreaseReviewing: boolean = false) {
+  if (!result) {
+    el.setAttribute(valFnName.toString(), typeof result === "string" && result ? result : "");
+    setIsGood(el, false);
+  } else el.removeAttribute(valFnName.toString());
+  if (decreaseReviewing) {
+    const howManyLeft = setReviewing(el, -1);
+    if (howManyLeft < 1) setIsGood(el, !el.hasAttribute("needsWork"));
+  }
 }
-function clearValError(el: Element, valFnName: string | number) {
-  el.removeAttribute(valFnName.toString());
+
+function setReviewing(el: Element, howMany: number) {
+  if (howMany === -1) howMany = Number(el.getAttribute("reviewing") || "1") - 1;
+  if (howMany === 0) el.removeAttribute("reviewing");
+  else el.setAttribute("reviewing", howMany.toString());
+  return howMany;
 }
-function setValError(el: Element, valFnName: string | number) {
-  el.setAttribute(valFnName.toString(), "");
+
+function setIsGood(el: Element, good: boolean) {
+  if (good) {
+    el.setAttribute("approval", "");
+    el.removeAttribute("needsWork");
+  } else {
+    el.setAttribute("needsWork", "");
+    el.removeAttribute("approval");
+  }
 }
 
 // // set either onBlur / onChange to this. Transform the list of val* functions to onChange="uifVal(this, closest('[controller]'), val*)"
@@ -357,6 +382,34 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
     if (valueOfInnerHtmlParameter) rendered = rendered.replace(innerHtmlRegex, valueOfInnerHtmlParameter);
     element.innerHTML = substitutions(rendered, componentInstance);
     await browserToParseHTML();
+
+    // remember validator functions on which elements, remove initialization step stuff
+    const elements = element.querySelectorAll("[uifValidatee]");
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i] as ElementWithValidators;
+      const componentElement = el.closest("[component]") as ElementWithController;
+      if (!componentElement) {
+        console.error("Form input field on", el, "is outside of uif-controlled DOM");
+        continue;
+      }
+      const ctrl = componentElement.controller;
+      if (!ctrl) {
+        console.error("Component lacks .js controller on which to put validator functions like", el.uifValidators.join(", "));
+        continue;
+      }
+      const valFunctionNames = getMembers(ctrl).filter(each => each.startsWith("must")); // TODO cache
+      el.removeAttribute("uifValidatee");
+      el.uifValidators = Array.from(el.attributes)
+        .filter(attr => attr.name.startsWith("initmust"))
+        .map(attr => {
+          el.removeAttribute(attr.name);
+          const valFnNameLowercased = attr.name.slice(4);
+          const valFnName = valFunctionNames.find(f => f.toLowerCase() === valFnNameLowercased);
+          if (!valFnName) console.error("Undefined validation function", valFnNameLowercased, "Options were", valFunctionNames.map(f => f.toLowerCase()).join(", "));
+          return valFnName || "";
+        })
+        .filter(name => !!name);
+    }
   }
 
   return componentInstance;
@@ -384,8 +437,7 @@ function substitutions(html: string, component: ComponentInstance): string {
           break;
         case SubstitutionTypes.Validator:
           for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
-            const parameterList = found[2] ? `${found[2]},` : "";
-            html = html.replace(sub.regex, ` ${sub.key}="" onChange="uifVal(this,closest('[component]'),closest('form'))"`);
+            html = html.replace(sub.regex, ` uifValidatee init${sub.key} onChange="uifVal(this, event)"`);
           }
           break;
       }
