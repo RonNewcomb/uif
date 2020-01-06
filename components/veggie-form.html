@@ -4,8 +4,18 @@
   <div for="mustBeMineral">Minerals have an 'm' in their name</div>
   <div for="mustBeVegetable">Vegetables have an 'v' in their name</div>
 </div>
-<textarea></textarea>
-<select>
-  <option>opt 1</option>
-  <option>opt 2</option>
-</select>
+<div mustBeAnimal mustBeMineral mustBeVegetable mustBe>
+  <textarea></textarea>
+  <div for="mustBe">this is required</div>
+  <div for="mustBeAnimal">Animals have an 'a' in their name</div>
+  <div for="mustBeMineral">Minerals have an 'm' in their name</div>
+  <div for="mustBeVegetable">Vegetables have an 'v' in their name</div>
+</div>
+<div mustBeOpt2>
+  <select>
+    <option>opt 1</option>
+    <option>opt 2</option>
+  </select>
+  <div for="mustBeOpt2">Never take the first offer</div>
+</div>
+<div for="needsWork">Please correct errors</div>

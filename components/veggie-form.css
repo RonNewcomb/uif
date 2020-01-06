@@ -20,7 +20,15 @@ veggie-form > * {
   background-color: lightgreen;
 }
 
-[for="mustBeAnimal"] {
+[for="needsWork"] {
+  display: none;
+}
+
+[needsWork] [for="needsWork"] {
+  display: block;
+}
+
+div[for] {
   display: none;
 }
 
@@ -28,18 +36,14 @@ veggie-form > * {
   display: block;
 }
 
-[for="mustBeMineral"] {
-  display: none;
-}
-
 [mustBeMineral] [for="mustBeMineral"] {
   display: block;
 }
 
-[for="mustBeVegetable"] {
-  display: none;
+[mustBeVegetable] [for="mustBeVegetable"] {
+  display: block;
 }
 
-[mustBeMineral] [for="mustBeVegetable"] {
+[mustBeOpt2] [for="mustBeOpt2"] {
   display: block;
 }
