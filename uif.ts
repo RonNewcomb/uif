@@ -386,31 +386,29 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
     await browserToParseHTML();
 
     // remember validator functions on which elements, remove initialization step stuff
-    const elements = element.querySelectorAll("[uifValidatee]");
-    for (let i = 0; i < elements.length; i++) {
-      const el = elements[i] as ElementWithValidators;
-      const componentElement = el.closest("[component]") as ElementWithController;
-      if (!componentElement) {
-        console.error("Form input field on", el, "is outside of uif-controlled DOM");
-        continue;
+    const elementsWithValidators = element.querySelectorAll("[uifValidatee]");
+    if (elementsWithValidators.length > 0) {
+      if (!element.controller) {
+        // TODO: a global registry of must functions so you don't need a controller just for Required, etc.
+        console.error(element.tagName, "contains elements with must* validator attributes, but lacks a .js controller which would hold definitions of those must* functions");
+      } else {
+        const valFunctionNames = getMembers(element.controller).filter(each => each.startsWith("must"));
+        const listOfValors = valFunctionNames.map(f => f.toLowerCase()).join(", ");
+        for (let i = 0; i < elementsWithValidators.length; i++) {
+          const elementWithValidators = elementsWithValidators[i] as ElementWithValidators;
+          elementWithValidators.removeAttribute("uifValidatee");
+          elementWithValidators.uifValidators = Array.from(elementWithValidators.attributes)
+            .filter(attr => attr.name.startsWith("initmust"))
+            .map(attr => {
+              elementWithValidators.removeAttribute(attr.name);
+              const valFnNameLowercased = attr.name.slice(4);
+              const valFnName = valFunctionNames.find(f => f.toLowerCase() === valFnNameLowercased);
+              if (!valFnName) console.error("Undefined validation function", valFnNameLowercased, " Options were", listOfValors);
+              return valFnName || "";
+            })
+            .filter(name => !!name);
+        }
       }
-      const ctrl = componentElement.controller;
-      if (!ctrl) {
-        console.error("Component lacks .js controller on which to put validator functions like", el.uifValidators.join(", "));
-        continue;
-      }
-      const valFunctionNames = getMembers(ctrl).filter(each => each.startsWith("must")); // TODO cache
-      el.removeAttribute("uifValidatee");
-      el.uifValidators = Array.from(el.attributes)
-        .filter(attr => attr.name.startsWith("initmust"))
-        .map(attr => {
-          el.removeAttribute(attr.name);
-          const valFnNameLowercased = attr.name.slice(4);
-          const valFnName = valFunctionNames.find(f => f.toLowerCase() === valFnNameLowercased);
-          if (!valFnName) console.error("Undefined validation function", valFnNameLowercased, "Options were", valFunctionNames.map(f => f.toLowerCase()).join(", "));
-          return valFnName || "";
-        })
-        .filter(name => !!name);
     }
   }
 
