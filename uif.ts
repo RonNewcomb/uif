@@ -152,7 +152,7 @@ interface ValErrorsController {
 interface ValidatingController extends Dictionary<ValidationFn> /*,ValErrorsController */ { }
 
 type ElementWithController = Element & { controller?: Controller };
-type ElementWithValidators = Element & { uifValidators: string[] };
+type ElementWithValidators = Element & { uifValidators?: string[] };
 type ElementWithValue = Element & { value: string; name?: string };
 type ArrayKeys<T> = Array<T> & Dictionary<T>;
 
@@ -188,17 +188,37 @@ declare global {
   }
 }
 
-// static data ///////////
+// utility /////////////////////////////////
 
+const protobj = Object.getPrototypeOf(new Object());
+function getMembers(obj: object) {
+  const p: string[] = [];
+  for (; obj && obj != protobj; obj = Object.getPrototypeOf(obj)) {
+    const op: string[] = Object.getOwnPropertyNames(obj);
+    for (let i = 0; i < op.length; i++) if (p.indexOf(op[i]) == -1) p.push(op[i]);
+  }
+  return p;
+}
+
+// static data /////////////////////////////////
+
+const StandardValidators: Dictionary<ValidationFn> = {
+  mustBe: (val: string) => !!val,
+};
+
+const namesOfStandardValidators = getMembers(StandardValidators);
 const innerHtmlRegex = new RegExp(`{innerHTML}`, "g");
 const inputFormFields = ["TEXTAREA", "INPUT", "SELECT"];
+const VALID = 'approval';
+const INVALID = 'needsWork';
+const VALIDATING = 'reviewing';
 const filesCache = new Map<TagName, ComponentDefinition>();
 const browserToParseHTML = (ms?: number) => new Promise(r => setTimeout(r, ms));
 const eventTypes = Object.keys(window)
   .filter(k => k.startsWith("on"))
   .sort((a, b) => b.length - a.length);
 
-// setup ///////////////
+// setup /////////////////////////////////
 
 const RegexPerSubType: Map<SubstitutionTypes, (key: string) => RegExp> = new Map([
   [SubstitutionTypes.MethodInvocation, key => new RegExp(`{(${key})\\(([^)]*)\\)}`)],
@@ -227,21 +247,9 @@ class Substitution {
   }
 }
 
-// runtime
+// form validation /////////////////////////////////
 
-const protobj = Object.getPrototypeOf(new Object());
-function getMembers(obj: object) {
-  const p: string[] = [];
-  for (; obj && obj != protobj; obj = Object.getPrototypeOf(obj)) {
-    const op: string[] = Object.getOwnPropertyNames(obj);
-    for (let i = 0; i < op.length; i++) if (p.indexOf(op[i]) == -1) p.push(op[i]);
-  }
-  return p;
-}
-
-// form validation
-
-window.uifVal = (wrapperElement: ElementWithValidators, event: Event) => {
+window.uifVal = async (wrapperElement: ElementWithValidators, event: Event) => {
   const inputElement = (event.target as any) as ElementWithValue;
 
   const componentElement = wrapperElement.closest("[component]") as ElementWithController;
@@ -250,81 +258,71 @@ window.uifVal = (wrapperElement: ElementWithValidators, event: Event) => {
     return;
   }
 
-  const ctrl = componentElement.controller;
-  if (!ctrl) {
-    console.error("Component lacks .js controller on which to put validator functions like", wrapperElement.uifValidators.join(", "));
-    return;
-  }
+  const ctrl: Dictionary<ValidationFn> = componentElement.controller || StandardValidators;
 
   const form = wrapperElement.closest("form");
-
-  let reviewing = 0;
-  let approvals = 0;
   let needsWorks = 0;
-  for (const valFnName of wrapperElement.uifValidators) {
-    const result = ctrl[valFnName](inputElement.value, form);
-    if (!(result instanceof Promise)) {
-      result ? approvals++ : needsWorks++;
-      annotateElement(wrapperElement, valFnName, result);
+  let reviews: Promise<void>[] = [];
+  for (const valFnName of (wrapperElement.uifValidators || [])) {
+    const validator = ctrl[valFnName] || StandardValidators[valFnName];
+    if (!validator) {
+      console.error("Cannot find validation function", valFnName);
+      continue;
+    }
+    const result = validator(inputElement.value, form);
+    if (result instanceof Promise) {
+      const review = result.catch(e => e ? e.toString() : valFnName + " threw").then(r => annotateElement(wrapperElement, valFnName, r, true));
+      reviews.push(review);
     } else {
-      reviewing++;
-      result.catch(e => (e ? e.toString() : valFnName + " threw")).then(r => annotateElement(wrapperElement, valFnName, r, true));
+      annotateElement(wrapperElement, valFnName, result);
+      if (!result) needsWorks++;
     }
   }
-  setReviewing(wrapperElement, reviewing);
-  if (needsWorks > 0) setIsGood(wrapperElement, false);
-  if (needsWorks === 0 && reviewing === 0) setIsGood(wrapperElement, true);
+  setReviewing(wrapperElement, reviews.length);
+  if (needsWorks > 0)
+    setIsValid(wrapperElement, false); // if invalid show immediately
+  if (reviews.length > 0)
+    await Promise.all(reviews); // if pending async wait
+  else if (needsWorks === 0)
+    setIsValid(wrapperElement, true); // if none were async then we can finally say VALID
 };
 
 function annotateElement(el: Element, valFnName: string | number, result: boolean | string, decreaseReviewing: boolean = false) {
-  if (!result) {
+  if (result)
+    el.removeAttribute(valFnName.toString())
+  else {
     el.setAttribute(valFnName.toString(), typeof result === "string" && result ? result : "");
-    setIsGood(el, false);
-  } else el.removeAttribute(valFnName.toString());
-  if (decreaseReviewing) {
-    const howManyLeft = setReviewing(el, -1);
-    if (howManyLeft < 1) setIsGood(el, !el.hasAttribute("needsWork"));
+    setIsValid(el, false);
   }
+  if (decreaseReviewing) {
+    const howManyLeft = setReviewing(el, getReviewing(el) - 1);
+    if (howManyLeft < 1) setIsValid(el, !el.hasAttribute(INVALID));
+  }
+}
+
+function getReviewing(el: Element): number {
+  return Number(el.getAttribute(VALIDATING) || "0");
 }
 
 function setReviewing(el: Element, howMany: number) {
-  if (howMany === -1) howMany = Number(el.getAttribute("reviewing") || "1") - 1;
-  if (howMany === 0) el.removeAttribute("reviewing");
-  else el.setAttribute("reviewing", howMany.toString());
+  if (howMany < 1) el.removeAttribute(VALIDATING);
+  else el.setAttribute(VALIDATING, howMany.toString());
   return howMany;
 }
 
-function setIsGood(el: Element, good: boolean) {
+function setIsValid(el: Element, good: boolean) {
   if (good) {
-    el.setAttribute("approval", "");
-    el.removeAttribute("needsWork");
+    el.setAttribute(VALID, "");
+    el.removeAttribute(INVALID);
   } else {
-    el.setAttribute("needsWork", "");
-    el.removeAttribute("approval");
+    el.setAttribute(INVALID, "");
+    el.removeAttribute(VALID);
   }
 }
 
-// // set either onBlur / onChange to this. Transform the list of val* functions to onChange="uifVal(this, closest('[controller]'), val*)"
-// const uifVal = async (wrapperElement: ElementWithValue, ctrl: ValidatingController, form: any, ...rest: (keyof ValidatingController)[]) => {
-//   const fields: ElementWithValue[] = inputFormFields.includes(wrapperElement.tagName) ? [wrapperElement] : Array.from(wrapperElement.querySelectorAll(inputFormFields.join(",")));
-//   const val = fields.reduce<ArrayKeys<string>>((retval, f) => {
-//     retval.push(f.value);
-//     if (f.name) retval[f.name] = f.value;
-//     return retval;
-//   }, [] as any);
-//   const results:{ result: string|boolean, name:}[] = [];
-//   const gettingResults = rest.map(key => ctrl[key](val, form)).map(result => Promise.resolve(result));
-//   const results = await Promise.all(gettingResults);
-//   if (results.every(r => (typeof r === "string" ? r === "" : !!r))) {
-//     (ctrl as ValErrorsController).errors = undefined;
-//     return;
-//   }
 
-// };
+// initialization /////////////////////////////////////////////////
 
-// initialization
-
-// load one file part (html/css/js) of a component and return file's contents as a string, or undefined if 404
 async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents | undefined> {
   tag = tag.toLowerCase();
   const resource = "./components/" + tag + "." + ext;
@@ -383,40 +381,30 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
     let rendered = definition.html as string;
     const valueOfInnerHtmlParameter = element.innerHTML;
     if (valueOfInnerHtmlParameter) rendered = rendered.replace(innerHtmlRegex, valueOfInnerHtmlParameter);
-    element.innerHTML = substitutions(rendered, componentInstance);
+    element.innerHTML = substitute(rendered, componentInstance);
     await browserToParseHTML();
 
     // remember validator functions on which elements, remove initialization step stuff
-    const elementsWithValidators = element.querySelectorAll("[uifValidatee]");
-    if (elementsWithValidators.length > 0) {
-      if (!element.controller) {
-        // TODO: a global registry of must functions so you don't need a controller just for Required, etc.
-        console.error(element.tagName, "contains elements with must* validator attributes, but lacks a .js controller which would hold definitions of those must* functions");
-      } else {
-        const valFunctionNames = definition.controllerMembers!.filter(each => each.startsWith("must"));
-        const listOfValors = valFunctionNames.map(f => f.toLowerCase()).join(", ");
-        for (let i = 0; i < elementsWithValidators.length; i++) {
-          const elementWithValidators = elementsWithValidators[i] as ElementWithValidators;
-          elementWithValidators.removeAttribute("uifValidatee");
-          elementWithValidators.uifValidators = Array.from(elementWithValidators.attributes)
-            .filter(attr => attr.name.startsWith("initmust"))
-            .map(attr => {
-              elementWithValidators.removeAttribute(attr.name);
-              const valFnNameWithoutInitPrefix = attr.name.slice(4);
-              const valFnName = valFunctionNames.find(f => f.toLowerCase() === valFnNameWithoutInitPrefix);
-              if (!valFnName) console.error("Undefined validation function", valFnNameWithoutInitPrefix, " Options were", listOfValors);
-              return valFnName || "";
-            })
-            .filter(name => !!name);
-        }
-      }
-    }
+    const valFunctionNames = (definition.controllerMembers || []).filter(each => each.startsWith("must")).concat(namesOfStandardValidators);
+    Array.from(element.querySelectorAll("[uifValidatee]")).forEach((elementWithValidators: ElementWithValidators) => {
+      elementWithValidators.removeAttribute("uifValidatee");
+      elementWithValidators.uifValidators = Array.from(elementWithValidators.attributes)
+        .filter(attr => attr.name.startsWith("initmust"))
+        .map(attr => {
+          elementWithValidators.removeAttribute(attr.name);
+          const valFnNameWithoutInitPrefix = attr.name.slice(4);
+          const valFnName = valFunctionNames.find(f => f.toLowerCase() === valFnNameWithoutInitPrefix);
+          if (!valFnName) console.error("Undefined validation function", valFnNameWithoutInitPrefix, " Options were", valFunctionNames.join(", "));
+          return valFnName || "";
+        })
+        .filter(name => !!name);
+    });
   }
 
   return componentInstance;
 }
 
-function substitutions(html: string, component: ComponentInstance): string {
+function substitute(html: string, component: ComponentInstance): string {
   if (component.controller && component.definition.substitutions)
     for (const sub of component.definition.substitutions) {
       switch (sub.type) {
