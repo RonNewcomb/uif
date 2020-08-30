@@ -132,16 +132,16 @@ const standardTags = [
 
 // interfaces ////////
 
-interface TagName extends String {}
-interface FileContents extends String {}
-interface FileExtension extends String {}
+interface TagName extends String { }
+interface FileContents extends String { }
+interface FileExtension extends String { }
 interface ControllerCtor {
-  new (instance?: ComponentInstance): Controller;
+  new(instance?: ComponentInstance): Controller;
 }
 interface Dictionary<T = any> {
   [key: string]: T;
 }
-interface Controller extends ControllerCtor, Dictionary<any> {}
+interface Controller extends ControllerCtor, Dictionary<any> { }
 
 interface ValidationFn {
   (val: any, form: any): boolean | Promise<boolean>;
@@ -149,7 +149,7 @@ interface ValidationFn {
 interface ValErrorsController {
   errors?: ArrayKeys<Dictionary<string>>;
 }
-interface ValidatingController extends Dictionary<ValidationFn> /*,ValErrorsController */ {}
+interface ValidatingController extends Dictionary<ValidationFn> /*,ValErrorsController */ { }
 
 type ElementWithController = Element & { controller?: Controller };
 type ElementWithValidators = Element & { uifValidators: string[] };
@@ -161,6 +161,8 @@ interface ComponentDefinition {
   html: FileContents | undefined;
   js: ControllerCtor | undefined;
   loading?: Promise<any>;
+  controllerMembers?: string[]; // cache
+  substitutions?: Substitution[]; // cache
 }
 
 const enum SubstitutionTypes {
@@ -174,7 +176,6 @@ interface ComponentInstance {
   definition: ComponentDefinition;
   element: ElementWithController;
   controller?: Controller;
-  substitutions: Substitution[]; // cache
 }
 
 export interface EventHandler {
@@ -358,7 +359,6 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
   const componentInstance: ComponentInstance = {
     definition: definition,
     element: element,
-    substitutions: []
   };
 
   if (definition.css) {
@@ -372,7 +372,8 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
       const ctrl = new definition.js(componentInstance);
       element.controller = ctrl;
       componentInstance.controller = ctrl;
-      componentInstance.substitutions = getMembers(ctrl).map(key => new Substitution(key, ctrl));
+      if (!definition.controllerMembers) definition.controllerMembers = getMembers(ctrl);
+      if (!definition.substitutions) definition.substitutions = definition.controllerMembers.map(key => new Substitution(key, ctrl));
     } catch (e) {
       console.error(element.tagName.toLowerCase(), "controller ctor threw", e);
     }
@@ -392,7 +393,7 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
         // TODO: a global registry of must functions so you don't need a controller just for Required, etc.
         console.error(element.tagName, "contains elements with must* validator attributes, but lacks a .js controller which would hold definitions of those must* functions");
       } else {
-        const valFunctionNames = getMembers(element.controller).filter(each => each.startsWith("must"));
+        const valFunctionNames = definition.controllerMembers!.filter(each => each.startsWith("must"));
         const listOfValors = valFunctionNames.map(f => f.toLowerCase()).join(", ");
         for (let i = 0; i < elementsWithValidators.length; i++) {
           const elementWithValidators = elementsWithValidators[i] as ElementWithValidators;
@@ -401,9 +402,9 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
             .filter(attr => attr.name.startsWith("initmust"))
             .map(attr => {
               elementWithValidators.removeAttribute(attr.name);
-              const valFnNameLowercased = attr.name.slice(4);
-              const valFnName = valFunctionNames.find(f => f.toLowerCase() === valFnNameLowercased);
-              if (!valFnName) console.error("Undefined validation function", valFnNameLowercased, " Options were", listOfValors);
+              const valFnNameWithoutInitPrefix = attr.name.slice(4);
+              const valFnName = valFunctionNames.find(f => f.toLowerCase() === valFnNameWithoutInitPrefix);
+              if (!valFnName) console.error("Undefined validation function", valFnNameWithoutInitPrefix, " Options were", listOfValors);
               return valFnName || "";
             })
             .filter(name => !!name);
@@ -416,8 +417,8 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
 }
 
 function substitutions(html: string, component: ComponentInstance): string {
-  if (component.controller)
-    for (const sub of component.substitutions) {
+  if (component.controller && component.definition.substitutions)
+    for (const sub of component.definition.substitutions) {
       switch (sub.type) {
         case SubstitutionTypes.Property:
           html = html.replace(sub.regex, component.controller[sub.key]);
