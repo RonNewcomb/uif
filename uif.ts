@@ -192,7 +192,7 @@ declare global {
 const innerHtmlRegex = new RegExp(`{innerHTML}`, "g");
 const inputFormFields = ["TEXTAREA", "INPUT", "SELECT"];
 const filesCache = new Map<TagName, ComponentDefinition>();
-const browserToParseHTML = () => new Promise(r => setTimeout(r));
+const browserToParseHTML = (ms?: number) => new Promise(r => setTimeout(r, ms));
 const eventTypes = Object.keys(window)
   .filter(k => k.startsWith("on"))
   .sort((a, b) => b.length - a.length);
@@ -331,7 +331,7 @@ async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents |
     return fetch(resource)
       .then(response => response.text())
       .catch(_ => undefined);
-  const exported = await SystemJS.import(resource).catch(_ => undefined);
+  const exported = await import(resource).catch(_ => undefined);
   if (!exported) return undefined;
   if (exported.default) return exported.default;
   console.error(tag + ".js should have a default export class");
@@ -453,4 +453,4 @@ async function scan(element: Element): Promise<any> {
 
 // go ///////////
 
-scan(document.body);
+browserToParseHTML(1).then(_ => scan(document.body));

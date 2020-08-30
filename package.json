@@ -10,10 +10,8 @@
   },
   "devDependencies": {
     "local-web-server": "3.0.7",
-    "typescript": "3.7.4",
-    "@types/systemjs": "0.20.6"
+    "typescript": "3.7.4"
   },
   "dependencies": {
-    "systemjs": "0.21.0"
   }
 }

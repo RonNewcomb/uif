@@ -3,25 +3,10 @@
 <head>
     <base href="/" />
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <script src="node_modules/systemjs/dist/system.js"></script>
-    <script>
-        SystemJS.config({
-            map: {
-                'app': '.',
-            },
-            packages: {
-                'app': {
-                    main: './uif.js',
-                    defaultExtension: 'js',
-                },
-            }
-        });
-        SystemJS.import('app').catch(console.error);
-    </script>
-    <!-- <script src="uif.js"></script> -->
+    <script src="uif.js"></script>
 </head>
 
-<body>
+<body style="background-color: gray;">
     <div></div>
     <my-app>
         My-app's content:

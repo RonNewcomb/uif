@@ -1,4 +1,4 @@
-import SomeService from "../services/SomeService";
+import SomeService from "../services/SomeService.js"; // Chrome/Firefox is apparently understanding & loading this without help; explicit extension needed
  
 SomeService.printer();
 

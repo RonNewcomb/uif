@@ -3,12 +3,12 @@
     "baseUrl": ".",
     "target": "es2016",
     "lib": [ "es2016", "dom" ],
-    "module": "umd",
+    "module": "esnext",
     "moduleResolution": "node",
     "sourceMap": false,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "removeComments": true,
+    "removeComments": true, // but if we use webpackIgnore:true on import(...
     "noImplicitAny": true,
     "alwaysStrict": true,
     "noImplicitReturns": true,
@@ -25,7 +25,7 @@
   },
   "compileOnSave": true,
   "include": [
-    "**/*.ts",
+    "**/*.ts"
   ],
   "exclude": [
     "node_modules"
