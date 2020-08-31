@@ -143,8 +143,10 @@ interface Dictionary<T = any> {
 }
 interface Controller extends ControllerCtor, Dictionary<any> { }
 
+type ValidationFnReturn = (boolean | string) | Promise<boolean | string>;
+
 interface ValidationFn {
-  (val: any, form: any): boolean | Promise<boolean>;
+  (val: string/* unless already mapped to number/boolean/Date*/, form: HTMLFormElement | null): ValidationFnReturn;
 }
 interface ValErrorsController {
   errors?: ArrayKeys<Dictionary<string>>;
@@ -405,32 +407,31 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
 }
 
 function substitute(html: string, component: ComponentInstance): string {
-  if (component.controller && component.definition.substitutions)
-    for (const sub of component.definition.substitutions) {
+  if (!component.controller || !component.definition.substitutions)
+    return html;
+  for (const sub of component.definition.substitutions) {
+    while (true) {
+      let found = html.match(sub.regex);
+      if (!found) break;
       switch (sub.type) {
         case SubstitutionTypes.Property:
           html = html.replace(sub.regex, component.controller[sub.key]);
           break;
         case SubstitutionTypes.MethodInvocation:
-          for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
-            const parameterList = JSON.parse(`[${found[2] || ""}]`);
-            const val = (component.controller[sub.key] as Function).apply(component.controller, parameterList);
-            html = html.replace(sub.regex, val);
-          }
+          const methodParameters = JSON.parse(`[${found[2] || ""}]`);
+          const val = (component.controller[sub.key] as Function).apply(component.controller, methodParameters);
+          html = html.replace(sub.regex, val);
           break;
         case SubstitutionTypes.EventHandler:
-          for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
-            const parameterList = found[2] ? `${found[2]},` : "";
-            html = html.replace(sub.regex, ` ${sub.eventType}="closest('[component]').controller.${sub.key}(${parameterList}event,this)"`);
-          }
+          const handlerParameters = found[2] ? `${found[2]},` : "";
+          html = html.replace(sub.regex, ` ${sub.eventType}="closest('[component]').controller.${sub.key}(${handlerParameters}event,this)"`);
           break;
         case SubstitutionTypes.Validator:
-          for (let found = html.match(sub.regex); found; found = html.match(sub.regex)) {
-            html = html.replace(sub.regex, ` uifValidatee init${sub.key} onChange="uifVal(this, event)"`);
-          }
+          html = html.replace(sub.regex, ` uifValidatee init${sub.key} onChange="uifVal(this, event)"`);
           break;
       }
     }
+  }
   return html;
 }
 

@@ -1,5 +1,5 @@
 <div mustBeAnimal mustBeMineral mustBeVegetable mustBeRacecar>
-  <input type="text" />
+  <label>Name it:<br /><input type="text" /></label> 
   <div for="mustBeAnimal">Animals have an 'a' in their name</div>
   <div for="mustBeMineral">Minerals have an 'm' in their name</div>
   <div for="mustBeVegetable">Vegetables have an 'v' in their name</div>
@@ -8,17 +8,19 @@
   <mustBeVegetable>Vegetables have an 'v' in their name</mustBeVegetable> -->
 </div>
 <div mustBeAnimal mustBeMineral mustBeVegetable mustBe>
-  <textarea></textarea>
+  <label>About it:<br /><textarea></textarea></label>
   <div for="mustBe">this is required</div>
   <div for="mustBeAnimal">Animals have an 'a' in their name</div>
   <div for="mustBeMineral">Minerals have an 'm' in their name</div>
   <div for="mustBeVegetable">Vegetables have an 'v' in their name</div>
 </div>
 <div mustBeOpt2>
-  <select>
-    <option>opt 1</option>
-    <option>opt 2</option>
-  </select>
-  <div for="mustBeOpt2">Never take the first offer</div>
+  <label>Choose:<br />
+    <select>
+      <option>opt 1</option>
+      <option>opt 2</option>
+    </select>
+    <div for="mustBeOpt2">Never take the first offer</div>
+  </label>
 </div>
 <div for="needsWork">Please correct errors</div>

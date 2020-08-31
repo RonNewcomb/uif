@@ -16,9 +16,21 @@ Also, the error messages themselves may be written into the HTML or returned by 
 
 Where to place validation messages could be immediately after the `input` but that assumption is easily broken.  Some sort of container for the purpose usually exists.
 
-Dumping ground for summaries can be `<err/>`.  Or `<err for="field" />` or `<err for="wholeform" />` or `<err for="mustBeVegetable">asdf</err>`. 
+Dumping ground for summaries can be `<err/>`.  Or `<err for="field" />` or `<err for="wholeform" />` or `<err for="mustBeVegetable">asdf</err>`.  Sometimes we only want to show the user one error not all of them.
 
-The difference between `<mustBeVegetable/>` and `<mustBeVegetable>Not a veggie</mustBeVegetable>` is the expectation that the validator will return the message. The HTML message is shown if both are provided.
+The difference between `<mustBeVegetable/>` and `<mustBeVegetable>Not a veggie</mustBeVegetable>` is the expectation that the validator will return the message. The HTML message is shown if both are provided.  (In this case the framework must add a permanent CSS class like `validation-message` to each of these pseudo-components so the user can style them with `.validation-message { ... }` rule.)
+
+If a `<err />` component is used, then users can style with a `err { ... }` rule. 
+
+Instead of `display:none` can we use `scale:0` and `scale:1` or whatever the `<if>` uses to animate on/off? 
+
+## Experimental Idea
+
+If `mustBeVeggie` is a validation function, and you want its message wrapped in an auto-created `<mustBeVeggie>` component, then can we genericize this into a function component, where any controller method could potentially be a one-off component? Any innerHTML could use substitutions same as anywhere. 
+
+If the return value of said function-component is typeof boolean or number, the truthy/falsy return value toggles `display:none`.  Typeof string inverts truthy/falsy.  (Otherwise it's no different from just `{mustBeVeggie}`?) 
+
+But now I'm evaluating the validator fns twice, once for real and once to show/hide the pseudo-component.
 
 
 ## Done

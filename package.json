@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "compile": "tsc",
-    "https": "ws --https",
+    "https": "ws --http2",
     "http": "ws"
   },
   "devDependencies": {
