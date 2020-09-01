@@ -143,9 +143,9 @@ interface Dictionary<T = any> {
 }
 interface Controller extends ControllerCtor, Dictionary<any> { }
 
-type ValidationFnReturn = (boolean | string) | Promise<boolean | string>;
+export type ValidationFnReturn = (boolean | string) | Promise<boolean | string>;
 
-interface ValidationFn {
+export interface ValidationFn {
   (val: string/* unless already mapped to number/boolean/Date*/, form: HTMLFormElement | null): ValidationFnReturn;
 }
 interface ValErrorsController {
@@ -153,7 +153,7 @@ interface ValErrorsController {
 }
 interface ValidatingController extends Dictionary<ValidationFn> /*,ValErrorsController */ { }
 
-type ElementWithController = Element & { controller?: Controller };
+type ElementWithController = Element & { uifComponent: ComponentInstance };
 type ElementWithValidators = Element & { uifValidators?: string[] };
 type ElementWithValue = Element & { value: string; name?: string };
 type ArrayKeys<T> = Array<T> & Dictionary<T>;
@@ -178,6 +178,7 @@ interface ComponentInstance {
   definition: ComponentDefinition;
   element: ElementWithController;
   controller?: Controller;
+  originalInnerHTML?: string;
 }
 
 export interface EventHandler {
@@ -186,14 +187,17 @@ export interface EventHandler {
 
 declare global {
   interface Window {
-    uifVal: (inputElement: ElementWithValidators, event: Event) => void;
+    uif: {
+      validate: (inputElement: ElementWithValidators, event: Event) => void;
+      handle: (element: Element, event: Event, method: string, ...rest: any[]) => Promise<void>;
+    }
   }
 }
 
 // utility /////////////////////////////////
 
 const protobj = Object.getPrototypeOf(new Object());
-function getMembers(obj: object) {
+export function getMembers(obj: object) {
   const p: string[] = [];
   for (; obj && obj != protobj; obj = Object.getPrototypeOf(obj)) {
     const op: string[] = Object.getOwnPropertyNames(obj);
@@ -204,18 +208,20 @@ function getMembers(obj: object) {
 
 // static data /////////////////////////////////
 
-const StandardValidators: Dictionary<ValidationFn> = {
+export const StandardValidators: Dictionary<ValidationFn> = {
   mustBe: (val: string) => !!val,
 };
+window.uif = {} as any;
 
 const namesOfStandardValidators = getMembers(StandardValidators);
 const innerHtmlRegex = new RegExp(`{innerHTML}`, "g");
 const inputFormFields = ["TEXTAREA", "INPUT", "SELECT"];
-const VALID = 'approval';
-const INVALID = 'needsWork';
-const VALIDATING = 'reviewing';
+export let VALID = 'approval';
+export let INVALID = 'needsWork';
+export let VALIDATING = 'reviewing';
 const filesCache = new Map<TagName, ComponentDefinition>();
-const browserToParseHTML = (ms?: number) => new Promise(r => setTimeout(r, ms));
+const browserToParseHTML = (milliseconds?: number) => new Promise(r => setTimeout(r, milliseconds));
+export { browserToParseHTML as wait };
 const eventTypes = Object.keys(window)
   .filter(k => k.startsWith("on"))
   .sort((a, b) => b.length - a.length);
@@ -224,7 +230,7 @@ const eventTypes = Object.keys(window)
 
 const RegexPerSubType: Map<SubstitutionTypes, (key: string) => RegExp> = new Map([
   [SubstitutionTypes.MethodInvocation, key => new RegExp(`{(${key})\\(([^)]*)\\)}`)],
-  [SubstitutionTypes.EventHandler, key => new RegExp(`\\s${key}(?!=)\\b(\\(([^)]*)\\))?`, "i")],
+  [SubstitutionTypes.EventHandler, key => new RegExp(`\\s${key}(?!=)(?!')\\b(\\(([^)]*)\\))?`, "i")],
   [SubstitutionTypes.Validator, key => new RegExp(`\\s${key}(?!=)\\b`, "gi")],
   [SubstitutionTypes.Property, key => new RegExp(`{${key}}`, "g")]
 ]);
@@ -249,9 +255,22 @@ class Substitution {
   }
 }
 
-// form validation /////////////////////////////////
+// event handling /////////////////////////////////
 
-window.uifVal = async (wrapperElement: ElementWithValidators, event: Event) => {
+window.uif.handle = async (element: Element, event: Event, method: string, ...rest: any[]) => {
+  var componentElement = element.closest('[component]') as ElementWithController;
+  if (!componentElement.uifComponent.controller || !componentElement.uifComponent.controller[method]) {
+    console.error("Method '", method, "not found on component", componentElement.tagName);
+    return;
+  }
+  componentElement.uifComponent.controller[method](...rest, event, element);
+  render(componentElement.uifComponent);
+}
+
+
+// form validating /////////////////////////////////
+
+window.uif.validate = async (wrapperElement: ElementWithValidators, event: Event) => {
   const inputElement = (event.target as any) as ElementWithValue;
 
   const componentElement = wrapperElement.closest("[component]") as ElementWithController;
@@ -260,7 +279,7 @@ window.uifVal = async (wrapperElement: ElementWithValidators, event: Event) => {
     return;
   }
 
-  const ctrl: Dictionary<ValidationFn> = componentElement.controller || StandardValidators;
+  const ctrl: Dictionary<ValidationFn> = componentElement.uifComponent.controller || StandardValidators;
 
   const form = wrapperElement.closest("form");
   let needsWorks = 0;
@@ -340,7 +359,7 @@ async function getFile(tag: TagName, ext: FileExtension): Promise<FileContents |
 }
 
 // given a custom element: load from server, cache it, instantiate it,
-async function loadAndInstantiateComponent(element: ElementWithController): Promise<ComponentInstance> {
+async function loadAndInstantiateComponent(element: Element): Promise<ComponentInstance> {
   element.setAttribute("component", "");
   let definition = filesCache.get(element.tagName);
 
@@ -358,7 +377,7 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
 
   const componentInstance: ComponentInstance = {
     definition: definition,
-    element: element,
+    element: element as ElementWithController,
   };
 
   if (definition.css) {
@@ -370,8 +389,8 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
   if (definition.js) {
     try {
       const ctrl = new definition.js(componentInstance);
-      element.controller = ctrl;
       componentInstance.controller = ctrl;
+      componentInstance.element.uifComponent = componentInstance; // backlink for re-render
       if (!definition.controllerMembers) definition.controllerMembers = getMembers(ctrl);
       if (!definition.substitutions) definition.substitutions = definition.controllerMembers.map(key => new Substitution(key, ctrl));
     } catch (e) {
@@ -380,10 +399,8 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
   }
 
   if (definition.html) {
-    let rendered = definition.html as string;
-    const valueOfInnerHtmlParameter = element.innerHTML;
-    if (valueOfInnerHtmlParameter) rendered = rendered.replace(innerHtmlRegex, valueOfInnerHtmlParameter);
-    element.innerHTML = substitute(rendered, componentInstance);
+    componentInstance.originalInnerHTML = element.innerHTML;
+    render(componentInstance);
     await browserToParseHTML();
 
     // remember validator functions on which elements, remove initialization step stuff
@@ -406,33 +423,31 @@ async function loadAndInstantiateComponent(element: ElementWithController): Prom
   return componentInstance;
 }
 
-function substitute(html: string, component: ComponentInstance): string {
-  if (!component.controller || !component.definition.substitutions)
-    return html;
-  for (const sub of component.definition.substitutions) {
-    while (true) {
-      let found = html.match(sub.regex);
-      if (!found) break;
-      switch (sub.type) {
-        case SubstitutionTypes.Property:
-          html = html.replace(sub.regex, component.controller[sub.key]);
-          break;
-        case SubstitutionTypes.MethodInvocation:
-          const methodParameters = JSON.parse(`[${found[2] || ""}]`);
-          const val = (component.controller[sub.key] as Function).apply(component.controller, methodParameters);
-          html = html.replace(sub.regex, val);
-          break;
-        case SubstitutionTypes.EventHandler:
-          const handlerParameters = found[2] ? `${found[2]},` : "";
-          html = html.replace(sub.regex, ` ${sub.eventType}="closest('[component]').controller.${sub.key}(${handlerParameters}event,this)"`);
-          break;
-        case SubstitutionTypes.Validator:
-          html = html.replace(sub.regex, ` uifValidatee init${sub.key} onChange="uifVal(this, event)"`);
-          break;
-      }
-    }
-  }
-  return html;
+function render(component: ComponentInstance): void {
+  let html = component.definition.html as string;
+  if (component.originalInnerHTML)
+    html = html.replace(innerHtmlRegex, component.originalInnerHTML);
+  if (component.controller && component.definition.substitutions)
+    for (const sub of component.definition.substitutions)
+      for (let found = html.match(sub.regex); found; found = html.match(sub.regex))
+        switch (sub.type) {
+          case SubstitutionTypes.Property:
+            html = html.replace(sub.regex, component.controller[sub.key]);
+            break;
+          case SubstitutionTypes.MethodInvocation:
+            const methodParameters = JSON.parse(`[${found[2] || ""}]`);
+            const val = (component.controller[sub.key] as Function).apply(component.controller, methodParameters);
+            html = html.replace(sub.regex, val);
+            break;
+          case SubstitutionTypes.EventHandler:
+            const handlerParameters = found[2] ? `, ${found[2]}` : "";
+            html = html.replace(sub.regex, ` ${sub.eventType}="uif.handle(this, event, '${sub.key}'${handlerParameters})"`);
+            break;
+          case SubstitutionTypes.Validator:
+            html = html.replace(sub.regex, ` uifValidatee init${sub.key} onChange="uif.validate(this, event)"`);
+            break;
+        }
+  component.element.innerHTML = html;
 }
 
 async function scan(element: Element): Promise<any> {

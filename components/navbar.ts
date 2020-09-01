@@ -1,32 +1,32 @@
-interface EventHandler {
-  (ev: Event, el: Element): void;
-}
-
-console.log("navbar.js is evaluated");
+import { EventHandler } from 'uif';
 
 export default class {
-  readonly title: string = "I'm a member of a navbar class";
+  title: string = "I'm a member of a navbar class";
 
   constructor() {
-    console.log("navbar ctor");
+    console.log(this.title);
   }
 
   open(x: number, event: Event, element: Element): void {
-    console.log("navbar.open() called with", x, "(a", typeof x + ") and event", event, "and element", element, "and this", this, "and title", this.title);
+    this.title = "navbar.open() called with " + x + " (a " + typeof x + ") and event " + event + " and element " + element + " and this " + this + " and title " + this.title;
+    console.log(this.title);
   }
 
   onclick2(x: number, event: Event, element: Element): void {
-    console.log("navbar.onClick2() called with", x, "(a", typeof x + ") and event", event, "and element", element, "and this", this);
+    this.title = "navbar.onClick2() called with " + x + " (a " + typeof x + ") and event " + event + " and element " + element + " and this " + this;
+    console.log(this.title);
   }
 
-  close() {}
+  close() { }
 
   hello(i: number, str: string) {
-    console.log("navbar.hello()");
+    this.title = "navbar.hello()";
+    console.log(this.title);
     return `hello ${str} youre #${i}!`;
   }
 
-  onClickMe: EventHandler = (ev, el) => console.log("onClickMe", ev, el);
+  onClickMe: EventHandler = (ev, el) => (this.title = "onClickMe") && console.log("onClickMe", ev, el);
 
-  onClickopen = () => console.log("onclickOpen");
+  onClickopen = () => (this.title = ("onclickOpen")) && console.log(this.title);
+
 }
