@@ -1,5 +1,5 @@
 # uif
-a toy UI framework
+A toy UI framework related to [A Fake Framework in 3 Lines of Code](https://dev.to/ronnewcomb/i-wrote-a-fake-ui-framework-in-3-lines-of-code-4nej)
 
 ## Concepts
 
