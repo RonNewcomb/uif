@@ -5,15 +5,11 @@
     "module": "ESNext",
     "moduleResolution": "node",
     "sourceMap": false,
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    //"outDir": "dist", // only .js files not .html or .css would be in /dist/
     "keyofStringsOnly": false,
     "forceConsistentCasingInFileNames": true,
-    "removeComments": true, // but if we use webpackIgnore:true on import(...
-    "alwaysStrict": true,
+    "alwaysStrict": false,
     "allowJs": false,
-    "allowSyntheticDefaultImports": true,
+    //"allowSyntheticDefaultImports": true,
     "noImplicitAny": true,
     "noImplicitReturns": true,
     "noImplicitThis": true,
@@ -25,8 +21,6 @@
     "strictBindCallApply": true,
     "strictFunctionTypes": true,
     "strictPropertyInitialization": true,
-    "declaration": false,
-    "paths": {}
   },
   "compileOnSave": true,
   "include": [
